@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, ArrowDownLeft, ArrowUpRight, Check, ChevronRight, CircleHelp, Clock3, Code2, Copy, CreditCard, ExternalLink, FileText, LayoutDashboard, Menu, MoreHorizontal, Package, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Webhook, X, Zap } from 'lucide-react';
 import './styles.css';
@@ -11,15 +11,63 @@ const initialPayments = [
   { id: 'pi_3Qx5a8C2', customer: 'Lena Park', email: 'lena@lumenworks.co', product: 'Starter plan', amount: 2900, status: 'refunded', method: 'Visa •••• 4242', created: 'Nov 08, 11:02', webhook: 'processed' },
 ];
 const products = [{ name: 'Starter plan', detail: 'For trying the flow', price: '$29.00', color: 'mint' }, { name: 'Pro workspace', detail: 'For growing teams', price: '$89.00', color: 'violet' }, { name: 'Team plan', detail: 'For larger operations', price: '$149.00', color: 'amber' }];
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_ENABLED = import.meta.env.VITE_USE_API !== 'false';
 const money = (cents) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+function normalizePayment(payment) {
+  return {
+    id: payment.stripe_payment_intent_id || `payment_${payment.id}`,
+    customer: payment.customer_name,
+    email: payment.customer_email,
+    product: payment.product_name,
+    amount: Number(payment.amount),
+    status: payment.status,
+    method: payment.payment_method || 'Test card',
+    created: payment.created_at ? new Date(payment.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Just now',
+    webhook: payment.webhook_status || 'pending',
+    backendId: payment.id,
+  };
+}
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || `API request failed (${response.status})`);
+  return data;
+}
+
 function App() {
-  const [tab, setTab] = useState('Overview'); const [payments, setPayments] = useState(initialPayments); const [filter, setFilter] = useState('all'); const [query, setQuery] = useState(''); const [modal, setModal] = useState(null); const [toast, setToast] = useState('');
+  const [tab, setTab] = useState('Overview'); const [payments, setPayments] = useState(initialPayments); const [filter, setFilter] = useState('all'); const [query, setQuery] = useState(''); const [modal, setModal] = useState(null); const [toast, setToast] = useState(''); const [apiConnected, setApiConnected] = useState(false);
+  useEffect(() => {
+    if (!API_ENABLED) return;
+    apiRequest('/payments?per_page=100').then(response => {
+      const records = Array.isArray(response.data) ? response.data : [];
+      setPayments(records.map(normalizePayment));
+      setApiConnected(true);
+    }).catch(() => setApiConnected(false));
+  }, []);
   const visible = useMemo(() => payments.filter(p => (filter === 'all' || p.status === filter) && `${p.customer} ${p.email} ${p.id}`.toLowerCase().includes(query.toLowerCase())), [payments, filter, query]);
   const succeeded = payments.filter(p => p.status === 'succeeded'); const volume = succeeded.reduce((sum, p) => sum + p.amount, 0);
   function notify(message) { setToast(message); window.setTimeout(() => setToast(''), 2600); }
-  function simulateCheckout(product) { const id = `pi_demo${Math.random().toString(36).slice(2, 8)}`; setPayments(current => [{ id, customer: 'Demo customer', email: 'demo@example.com', product: product.name, amount: Number(product.price.replace(/\D/g, '')), status: 'processing', method: 'Test card', created: 'Just now', webhook: 'pending' }, ...current]); setModal(null); notify('Checkout session created in test mode'); }
-  function retryWebhook(id) { setPayments(current => current.map(p => p.id === id ? { ...p, webhook: 'processed', status: p.status === 'failed' ? 'succeeded' : p.status } : p)); notify('Webhook queued for retry'); }
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><Zap size={15}/></span><span>payflow</span><small>DEMO</small></div><div className="mode-pill"><span className="pulse"/> Stripe test mode</div><nav><p>Workspace</p><NavItem icon={<LayoutDashboard size={17}/>} label="Overview" active={tab === 'Overview'} onClick={() => setTab('Overview')}/><NavItem icon={<CreditCard size={17}/>} label="Payments" count={payments.length} active={tab === 'Payments'} onClick={() => setTab('Payments')}/><NavItem icon={<Package size={17}/>} label="Products" active={tab === 'Products'} onClick={() => setTab('Products')}/><NavItem icon={<Webhook size={17}/>} label="Webhooks" active={tab === 'Webhooks'} onClick={() => setTab('Webhooks')}/><p>Build</p><NavItem icon={<Code2 size={17}/>} label="API explorer" active={tab === 'API explorer'} onClick={() => setTab('API explorer')}/><NavItem icon={<Settings2 size={17}/>} label="Settings" active={tab === 'Settings'} onClick={() => setTab('Settings')}/></nav><div className="sidebar-bottom"><div className="help-card"><CircleHelp size={17}/><div><strong>Payment docs</strong><span>Learn the flow</span></div><ChevronRight size={15}/></div><div className="profile"><div className="avatar">TP</div><div><strong>Tuyen Pham</strong><span>Developer</span></div><MoreHorizontal size={17}/></div></div></aside><main className="main"><header className="topbar"><button className="mobile-menu"><Menu size={20}/></button><div className="crumb"><span>Payment operations</span><ChevronRight size={14}/><strong>{tab}</strong></div><div className="top-actions"><button className="icon-btn" aria-label="Search"><Search size={18}/></button><div className="avatar small">TP</div></div></header><div className="content">{tab === 'Overview' && <Overview payments={payments} volume={volume} onCheckout={() => setModal('checkout')} onRetry={retryWebhook} onViewPayments={() => setTab('Payments')}/>} {tab === 'Payments' && <Payments payments={visible} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} onRetry={retryWebhook}/>} {tab === 'Products' && <Products onCheckout={simulateCheckout}/>} {tab === 'Webhooks' && <Webhooks payments={payments} onRetry={retryWebhook}/>} {tab === 'API explorer' && <ApiExplorer onCopy={() => notify('Request copied to clipboard')}/>} {tab === 'Settings' && <Settings/>}</div></main>{modal === 'checkout' && <CheckoutModal products={products} onClose={() => setModal(null)} onCreate={simulateCheckout}/>} {toast && <div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  async function simulateCheckout(product) {
+    const amount = Number(product.price.replace(/\D/g, ''));
+    const payload = { product_name: product.name, amount, customer_name: 'Demo customer', customer_email: 'demo@example.com', idempotency_key: `checkout-${crypto.randomUUID()}` };
+    if (API_ENABLED) {
+      try {
+        const response = await apiRequest('/payments/checkout', { method: 'POST', body: JSON.stringify(payload) });
+        setPayments(current => [normalizePayment(response.data), ...current]); setApiConnected(true); setModal(null); notify('Payment created through Laravel API'); return;
+      } catch { setApiConnected(false); }
+    }
+    const id = `pi_demo${Math.random().toString(36).slice(2, 8)}`;
+    setPayments(current => [{ id, customer: 'Demo customer', email: 'demo@example.com', product: product.name, amount, status: 'processing', method: 'Test card', created: 'Just now', webhook: 'pending' }, ...current]); setModal(null); notify('Checkout session created in local demo mode');
+  }
+  async function retryWebhook(id) {
+    const payment = payments.find(item => item.id === id);
+    if (API_ENABLED && payment?.backendId) {
+      try { const response = await apiRequest(`/payments/${payment.backendId}/retry-webhook`, { method: 'POST' }); setPayments(current => current.map(item => item.id === id ? normalizePayment(response.data) : item)); notify('Webhook retry processed by Laravel API'); return; } catch { setApiConnected(false); }
+    }
+    setPayments(current => current.map(p => p.id === id ? { ...p, webhook: 'processed', status: p.status === 'failed' ? 'succeeded' : p.status } : p)); notify('Webhook queued for local retry');
+  }
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><Zap size={15}/></span><span>payflow</span><small>DEMO</small></div><div className="mode-pill"><span className="pulse"/> Stripe test mode · {apiConnected ? 'Laravel API' : 'Local fallback'}</div><nav><p>Workspace</p><NavItem icon={<LayoutDashboard size={17}/>} label="Overview" active={tab === 'Overview'} onClick={() => setTab('Overview')}/><NavItem icon={<CreditCard size={17}/>} label="Payments" count={payments.length} active={tab === 'Payments'} onClick={() => setTab('Payments')}/><NavItem icon={<Package size={17}/>} label="Products" active={tab === 'Products'} onClick={() => setTab('Products')}/><NavItem icon={<Webhook size={17}/>} label="Webhooks" active={tab === 'Webhooks'} onClick={() => setTab('Webhooks')}/><p>Build</p><NavItem icon={<Code2 size={17}/>} label="API explorer" active={tab === 'API explorer'} onClick={() => setTab('API explorer')}/><NavItem icon={<Settings2 size={17}/>} label="Settings" active={tab === 'Settings'} onClick={() => setTab('Settings')}/></nav><div className="sidebar-bottom"><div className="help-card"><CircleHelp size={17}/><div><strong>Payment docs</strong><span>Learn the flow</span></div><ChevronRight size={15}/></div><div className="profile"><div className="avatar">TP</div><div><strong>Tuyen Pham</strong><span>Developer</span></div><MoreHorizontal size={17}/></div></div></aside><main className="main"><header className="topbar"><button className="mobile-menu"><Menu size={20}/></button><div className="crumb"><span>Payment operations</span><ChevronRight size={14}/><strong>{tab}</strong></div><div className="top-actions"><button className="icon-btn" aria-label="Search"><Search size={18}/></button><div className="avatar small">TP</div></div></header><div className="content">{tab === 'Overview' && <Overview payments={payments} volume={volume} onCheckout={() => setModal('checkout')} onRetry={retryWebhook} onViewPayments={() => setTab('Payments')}/>} {tab === 'Payments' && <Payments payments={visible} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} onRetry={retryWebhook}/>} {tab === 'Products' && <Products onCheckout={simulateCheckout}/>} {tab === 'Webhooks' && <Webhooks payments={payments} onRetry={retryWebhook}/>} {tab === 'API explorer' && <ApiExplorer onCopy={() => notify('Request copied to clipboard')}/>} {tab === 'Settings' && <Settings/>}</div></main>{modal === 'checkout' && <CheckoutModal products={products} onClose={() => setModal(null)} onCreate={simulateCheckout}/>} {toast && <div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 function NavItem({ icon, label, count, active, onClick }) { return <button className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}>{icon}<span>{label}</span>{count && <b>{count}</b>}</button> }
 function Overview({ payments, volume, onCheckout, onRetry, onViewPayments }) { const success = payments.filter(p => p.status === 'succeeded').length; return <><section className="hero"><div><p className="eyebrow">PAYMENT OPERATIONS <span className="live-dot"/> LIVE SIMULATION</p><h1>Good afternoon, Tuyen <span>✦</span></h1><p className="sub">A compact Stripe test-mode workspace for building reliable payment flows.</p></div><button className="primary" onClick={onCheckout}><CreditCard size={17}/> Create checkout</button></section><div className="stat-grid"><Stat icon={<ArrowUpRight size={17}/>} label="Test volume" value={money(volume)} detail="+18.4% this month" tone="mint"/><Stat icon={<Check size={17}/>} label="Successful payments" value={success} detail="96.8% success rate" tone="violet"/><Stat icon={<Clock3 size={17}/>} label="Pending webhooks" value={payments.filter(p => p.webhook !== 'processed').length} detail="1 retry scheduled" tone="amber"/><Stat icon={<ShieldCheck size={17}/>} label="Idempotency" value="100%" detail="Duplicate-safe writes" tone="blue"/></div><div className="grid-two"><section className="card chart-card"><div className="card-head"><div><h2>Payment volume</h2><p>Successful test payments · last 7 days</p></div><button className="select-btn">Last 7 days <ChevronRight size={14}/></button></div><div className="chart"><div className="chart-y"><span>$1k</span><span>$750</span><span>$500</span><span>$250</span><span>$0</span></div><div className="chart-body"><div className="bars">{[35,56,41,74,59,88,68].map((height, i) => <div className="bar-wrap" key={i}><div className="bar" style={{height: `${height}%`}}/><span>{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i]}</span></div>)}</div><div className="chart-line"/></div></div><div className="chart-note"><span><i className="legend mint"/> Net volume</span><span>Updated just now <RefreshCw size={12}/></span></div></section><section className="card activity-card"><div className="card-head"><div><h2>Recent activity</h2><p>Latest payment events</p></div><button className="text-btn" onClick={onViewPayments}>View all <ChevronRight size={14}/></button></div><div className="activity-list">{payments.slice(0, 4).map(p => <div className="activity" key={p.id}><div className={`event-icon ${p.status}`}><Activity size={15}/></div><div className="activity-copy"><strong>{p.customer}</strong><span>{p.product} · {money(p.amount)}</span></div><Status status={p.status}/><small>{p.created.split(',')[0]}</small></div>)}</div></section></div><section className="card table-card"><div className="card-head"><div><h2>Transaction history</h2><p>Trace each payment from intent to webhook.</p></div><button className="outline" onClick={onViewPayments}>Open payments <ExternalLink size={14}/></button></div><PaymentTable payments={payments.slice(0, 5)} onRetry={onRetry}/></section></> }
