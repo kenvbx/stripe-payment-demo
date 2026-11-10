@@ -9,7 +9,17 @@ npm install
 npm run dev
 ```
 
-Then open the Vite URL shown in the terminal. The UI uses local deterministic demo data, so Stripe credentials are not required for the first vertical slice.
+Then open the Vite URL shown in the terminal. The UI connects to the Laravel API when it is available. If the API is offline, it falls back to local demo data so the interface remains reviewable.
+
+## Run with Laravel API
+
+```bash
+cd backend
+php artisan migrate
+php artisan serve --port=8000
+```
+
+In a separate terminal, start the frontend with `VITE_USE_API=true` (the default). Vite proxies `/api` to `http://127.0.0.1:8000`. For a separately hosted API, set `VITE_API_URL` to its `/api` URL.
 
 ## Verify
 
