@@ -31,7 +31,13 @@ The build is the current automated smoke check. Before a live Stripe integration
 
 ## Planned Laravel integration
 
-The intended backend is a Laravel modular monolith using Stripe test mode. Keep `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, and database credentials in `.env`; never commit them. The API explorer in the demo shows the server-side PaymentIntent request and its `Idempotency-Key`.
+The backend is a Laravel modular monolith using Stripe Checkout in test mode. With `STRIPE_SECRET` configured, checkout creation returns a Stripe-hosted Checkout URL and the browser redirects there. Configure the Stripe CLI to forward events to `/api/webhooks/stripe`:
+
+```bash
+stripe listen --forward-to 127.0.0.1:8000/api/webhooks/stripe
+```
+
+Copy the CLI `whsec_...` value into `STRIPE_WEBHOOK_SECRET`. Keep `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, and database credentials in `.env`; never commit them. The API explorer in the demo shows the server-side PaymentIntent request and its `Idempotency-Key`.
 
 Use Stripe's test card `4242 4242 4242 4242` only in Stripe test mode, with any future expiry and any CVC. Do not enter real card data.
 

@@ -18,6 +18,8 @@ return [
         'key' => env('STRIPE_KEY'),
         'secret' => env('STRIPE_SECRET'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'success_url' => env('STRIPE_CHECKOUT_SUCCESS_URL', env('FRONTEND_URL', 'http://localhost:5173').'/?checkout=success&session_id={CHECKOUT_SESSION_ID}'),
+        'cancel_url' => env('STRIPE_CHECKOUT_CANCEL_URL', env('FRONTEND_URL', 'http://localhost:5173').'/?checkout=cancelled'),
     ],
 
     'postmark' => [

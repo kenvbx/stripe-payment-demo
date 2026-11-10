@@ -54,7 +54,7 @@ function App() {
     if (API_ENABLED) {
       try {
         const response = await apiRequest('/payments/checkout', { method: 'POST', body: JSON.stringify(payload) });
-        setPayments(current => [normalizePayment(response.data), ...current]); setApiConnected(true); setModal(null); notify('Payment created through Laravel API'); return;
+        setPayments(current => [normalizePayment(response.data), ...current]); setApiConnected(true); setModal(null); if (response.checkout_url) { window.location.assign(response.checkout_url); return; } notify('Payment created through Laravel API'); return;
       } catch { setApiConnected(false); }
     }
     const id = `pi_demo${Math.random().toString(36).slice(2, 8)}`;
