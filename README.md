@@ -41,6 +41,12 @@ Copy the CLI `whsec_...` value into `STRIPE_WEBHOOK_SECRET`. Keep `STRIPE_SECRET
 
 Use Stripe's test card `4242 4242 4242 4242` only in Stripe test mode, with any future expiry and any CVC. Do not enter real card data.
 
+## Portfolio evidence
+
+See [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for a reviewer walkthrough, architecture flow, evidence map, and dashboard screenshot.
+
+![Payment operations dashboard](./docs/dashboard-overview.png)
+
 ## Portfolio label
 
 `Personal Project` / `Demo Project`.
