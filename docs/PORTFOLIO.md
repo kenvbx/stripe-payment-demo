@@ -8,6 +8,12 @@ This project demonstrates a test-mode payment flow with a React/Vite operations 
 
 ![Payment operations dashboard](./dashboard-overview.png)
 
+### Payment detail
+
+The detail view shows payment identifiers, customer and product information, webhook delivery state, and the payment lifecycle timeline.
+
+![Payment detail page](./payment-detail.png)
+
 ## Reviewer walkthrough
 
 1. Start the Laravel API and Vite frontend using the commands in the root README.
@@ -22,6 +28,8 @@ This project demonstrates a test-mode payment flow with a React/Vite operations 
 
 | Area | Evidence in repository |
 | --- | --- |
+| Payment detail endpoint | `GET /api/payments/{id}` returns the transaction record for the detail page. |
+| Payment detail interface | `src/main.jsx` and `src/styles.css` |
 | Checkout creation | `backend/app/Http/Controllers/Api/PaymentController.php` |
 | Checkout Session persistence | `backend/database/migrations/2026_11_10_000002_add_checkout_fields_to_payments_table.php` |
 | Signature verification | `backend/app/Http/Controllers/Api/StripeWebhookController.php` |

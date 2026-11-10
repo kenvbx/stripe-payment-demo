@@ -16,6 +16,11 @@ class PaymentController extends Controller
         return response()->json(Payment::query()->latest()->paginate(min($request->integer('per_page', 25), 100)));
     }
 
+    public function show(Payment $payment): JsonResponse
+    {
+        return response()->json(['data' => $payment]);
+    }
+
     public function createCheckout(Request $request): JsonResponse
     {
         $data = $request->validate([

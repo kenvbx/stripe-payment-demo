@@ -43,7 +43,7 @@ Use Stripe's test card `4242 4242 4242 4242` only in Stripe test mode, with any 
 
 ## Portfolio evidence
 
-See [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for a reviewer walkthrough, architecture flow, evidence map, and dashboard screenshot.
+See [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for a reviewer walkthrough, architecture flow, evidence map, dashboard screenshot, and payment detail view.
 
 ![Payment operations dashboard](./docs/dashboard-overview.png)
 
