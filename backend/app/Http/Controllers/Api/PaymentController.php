@@ -18,7 +18,7 @@ class PaymentController extends Controller
 
     public function show(Payment $payment): JsonResponse
     {
-        return response()->json(['data' => $payment]);
+        return response()->json(['data' => $payment->load(['webhookEvents' => fn ($query) => $query->latest('received_at')])]);
     }
 
     public function createCheckout(Request $request): JsonResponse

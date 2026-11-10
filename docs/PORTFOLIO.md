@@ -33,7 +33,8 @@ The detail view shows payment identifiers, customer and product information, web
 | Checkout creation | `backend/app/Http/Controllers/Api/PaymentController.php` |
 | Checkout Session persistence | `backend/database/migrations/2026_11_10_000002_add_checkout_fields_to_payments_table.php` |
 | Signature verification | `backend/app/Http/Controllers/Api/StripeWebhookController.php` |
-| Duplicate event protection | `backend/app/Http/Controllers/Api/StripeWebhookController.php` and `backend/tests/Feature/PaymentApiTest.php` |
+| Duplicate event protection and delivery attempts | `backend/app/Services/StripeWebhookProcessor.php` and `backend/tests/Feature/PaymentApiTest.php` |
+| Persistent webhook event log | `backend/app/Models/WebhookEvent.php`, its migration, and `GET /api/webhook-events` |
 | Idempotent checkout creation | `backend/tests/Feature/PaymentApiTest.php` |
 | Retry and failure recovery | `backend/app/Http/Controllers/Api/PaymentController.php` |
 | Responsive interface | `src/main.jsx` and `src/styles.css` |

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Payment extends Model
 {
@@ -13,4 +14,9 @@ class Payment extends Model
     ];
 
     protected $casts = ['amount' => 'integer', 'paid_at' => 'datetime'];
+
+    public function webhookEvents(): HasMany
+    {
+        return $this->hasMany(WebhookEvent::class);
+    }
 }
