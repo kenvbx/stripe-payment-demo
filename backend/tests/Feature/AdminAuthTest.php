@@ -36,6 +36,12 @@ class AdminAuthTest extends TestCase
         $this->assertSame('succeeded', $payment->fresh()->status);
     }
 
+    public function test_api_auth_returns_json_even_without_a_json_accept_header(): void
+    {
+        $this->get('/api/payments', ['Accept' => '*/*'])
+            ->assertUnauthorized()->assertJsonPath('message', 'Unauthenticated.');
+    }
+
     public function test_login_issues_a_hashed_expiring_admin_token(): void
     {
         $this->user();
