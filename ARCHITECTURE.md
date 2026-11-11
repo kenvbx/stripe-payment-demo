@@ -26,6 +26,8 @@ Claims expire after two minutes. A duplicate active request returns retryable 40
 
 PostgreSQL integration workers synchronize before INSERT to exercise the unique-key race and savepoint recovery. A separate overlap scenario holds the gateway open while another request checks the claim. The gateway is fake; the transactions, row locks, and independent database connections are real.
 
+A past local session deadline triggers a bounded Stripe retrieval outside any database transaction. The service locks and reloads the payment afterward to preserve webhook success during the lookup. Only an exact session reporting `expired` and `unpaid` permits an explicit browser restart. Completed/paid sessions await confirmation; unknown results keep the existing key. Restart uses a new payment/key and the current catalog while retaining the old attempt. A confirmed paid/refunded payment replays without a redirect even after the deadline.
+
 ## Payment and event state
 
 Payment transitions are `created → processing → succeeded | failed`. Confirmed success can recover a failed payment. Verified full-refund events can move it to `refunded`, even before success arrives. Succeeded payments never regress to processing/failed; refunded is terminal. Repeated confirmations preserve original payment/refund timestamps. A completed Checkout Session remains processing until payment status is paid or no_payment_required.
@@ -38,7 +40,7 @@ Refund updates from API responses and verified events share `RefundStateMachine`
 
 ## Browser behavior
 
-`VITE_USE_API=false` selects explicit local simulation. In API mode there is no sample catalog substitution after a connection error and no fabricated successful checkout. Pending Checkout keys persist per product in sessionStorage; authentication tokens stay in memory.
+`VITE_USE_API=false` selects explicit local simulation. In API mode there is no sample catalog substitution after a connection error and no fabricated successful checkout. Pending Checkout keys persist per product in sessionStorage; authentication tokens stay in memory. A verified expired/unpaid attempt exposes **Start new checkout**. Only that explicit action replaces the selected product’s key; failures of the replacement request retain its key across reloads.
 
 Private records load only after administrator sign in, in pages of up to 100. Search, filters, and metrics apply to loaded records. Monetary totals are grouped by currency. Refresh resets lists to the first page. Late responses from an ended admin session cannot restore private data; detail requests also track selection order.
 

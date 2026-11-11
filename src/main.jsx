@@ -220,9 +220,12 @@ async function apiRequest(path, options = {}) {
     throw new Error("Admin session ended. Please sign in again.");
   if (!response.ok) {
     const detail = data.errors ? Object.values(data.errors).flat()[0] : null;
-    throw new Error(
+    const error = new Error(
       detail || data.message || `API request failed (${response.status})`,
     );
+    error.code = data.error_code;
+    error.restartAllowed = data.restart_allowed === true;
+    throw error;
   }
   return data;
 }
@@ -245,6 +248,7 @@ function App() {
   const [signingOut, setSigningOut] = useState(false);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [checkoutRestart, setCheckoutRestart] = useState(null);
   const checkoutInFlight = useRef(false);
   function clearAdminSession() {
     detailRequest.current++;
@@ -487,14 +491,23 @@ function App() {
       }
     }
   }
+  function restartCheckout(product) {
+    if (checkoutInFlight.current || checkoutRestart?.productId !== product.id) return;
+    // Retire only the verified expired attempt; the new key survives any ambiguous failure.
+    finishCheckout(product.id, checkoutRestart.key);
+    simulateCheckout(product);
+  }
   async function simulateCheckout(product) {
     if (checkoutInFlight.current) return;
     checkoutInFlight.current = true;
     setCheckoutSubmitting(true);
     setCheckoutError("");
+    setCheckoutRestart(null);
+    let attemptedKey;
     try {
       if (API_ENABLED) {
         const key = checkoutKey(product.id);
+        attemptedKey = key;
         const payload = {
           product_id: product.id,
           customer_name: "Demo customer",
@@ -553,6 +566,9 @@ function App() {
       setCheckoutError(
         error.message || "Checkout could not be confirmed. Please retry.",
       );
+      if (error.code === "CHECKOUT_EXPIRED" && error.restartAllowed && attemptedKey) {
+        setCheckoutRestart({ productId: product.id, key: attemptedKey });
+      }
     } finally {
       checkoutInFlight.current = false;
       setCheckoutSubmitting(false);
@@ -950,6 +966,12 @@ function App() {
             if (!checkoutInFlight.current) setModal(null);
           }}
           onCreate={simulateCheckout}
+          onRestart={restartCheckout}
+          restartProductId={checkoutRestart?.productId}
+          onProductChange={() => {
+            setCheckoutError("");
+            setCheckoutRestart(null);
+          }}
           submitting={checkoutSubmitting}
           error={checkoutError}
           formatPrice={money}

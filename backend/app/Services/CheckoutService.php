@@ -65,9 +65,6 @@ class CheckoutService
             $complete = DB::transaction(function () use ($payment, $claim): bool {
                 $locked = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
                 if ($locked->checkout_state === 'complete') {
-                    if ($locked->checkout_expires_at?->isPast()) {
-                        throw new CheckoutException('This checkout session has expired. Start a new checkout.', 'CHECKOUT_EXPIRED', 409);
-                    }
                     return true;
                 }
                 // Stripe may prune idempotency keys after 24h. Never blindly recreate beyond this window.
@@ -80,7 +77,7 @@ class CheckoutService
                 $locked->update(['checkout_state' => 'creating', 'checkout_claim_token' => $claim, 'checkout_claim_expires_at' => now()->addMinutes(2)]);
                 return false;
             });
-            if ($complete) return ['payment' => $payment->fresh(), 'replay' => true, 'mode' => $mode];
+            if ($complete) return $this->completedResult($payment->fresh(), true, $mode);
         } catch (CheckoutException|ValidationException $exception) {
             throw $exception;
         } catch (\Throwable $exception) {
@@ -110,7 +107,7 @@ class CheckoutService
                 ]);
                 return $locked->fresh();
             });
-            return ['payment' => $payment, 'replay' => $replay, 'mode' => $mode];
+            return $this->completedResult($payment, $replay, $mode);
         } catch (\Throwable $exception) {
             try {
                 Payment::whereKey($payment->id)->where('checkout_claim_token', $claim)->update([
@@ -129,5 +126,36 @@ class CheckoutService
             Log::warning('Checkout requires recovery.', ['payment_id' => $payment->id, 'exception' => $exception::class]);
             throw new CheckoutException('Checkout could not be confirmed. Retry to recover the same checkout.', 'CHECKOUT_RECOVERY_REQUIRED', 503, true);
         }
+    }
+
+    private function completedResult(Payment $payment, bool $replay, string $mode): array
+    {
+        $result = fn (Payment $current) => ['payment' => $current, 'replay' => $replay, 'mode' => $mode];
+        // Paid/refunded payments replay without a redirect, even after the session's expiry time.
+        if (in_array($payment->status, ['succeeded', 'refunded'], true) || !$payment->checkout_expires_at?->isPast()) {
+            return $result($payment);
+        }
+        if (!$payment->stripe_checkout_session_id || $mode !== 'stripe') {
+            throw new CheckoutException('The previous checkout cannot be verified. Contact the administrator before starting another checkout.', 'CHECKOUT_STATUS_UNAVAILABLE', 503, true);
+        }
+        try {
+            // A local deadline alone cannot establish that no payment was made. No row lock during Stripe I/O.
+            $session = $this->stripe->retrieve($payment->stripe_checkout_session_id);
+        } catch (\Throwable $exception) {
+            Log::warning('Expired checkout verification failed.', ['payment_id' => $payment->id, 'exception' => $exception::class]);
+            throw new CheckoutException('The previous checkout could not be verified. Retry to check the same checkout.', 'CHECKOUT_STATUS_UNAVAILABLE', 503, true);
+        }
+        return DB::transaction(function () use ($payment, $session, $result): array {
+            $locked = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            // A webhook may confirm payment while the retrieval is in flight.
+            if (in_array($locked->status, ['succeeded', 'refunded'], true)) return $result($locked);
+            if ($session->id === $locked->stripe_checkout_session_id && $session->status === 'expired' && $session->payment_status === 'unpaid') {
+                throw new CheckoutException('Stripe confirmed that this checkout expired without payment. Start a new checkout to try again.', 'CHECKOUT_EXPIRED', 409, restartAllowed: true);
+            }
+            if ($session->status === 'complete' || in_array($session->payment_status, ['paid', 'no_payment_required'], true)) {
+                throw new CheckoutException('The previous checkout has completed. Wait for payment confirmation or contact the administrator.', 'CHECKOUT_AWAITING_CONFIRMATION', 409, true);
+            }
+            throw new CheckoutException('The previous checkout has not been confirmed expired and unpaid. Retry to check the same checkout.', 'CHECKOUT_STATUS_UNAVAILABLE', 503, true);
+        });
     }
 }

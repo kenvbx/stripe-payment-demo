@@ -22,6 +22,12 @@ For conflicts, expired sessions, or the 23-hour recovery cutoff, an administrato
 
 Stripe handles automatic redelivery. The application does not schedule a background retry queue.
 
+## Restart an expired Checkout
+
+If **Create test payment** reports that Stripe confirmed expiry without payment, choose **Start new checkout** in the same dialog. This creates a new attempt for the selected product; the old record remains available for audit. The price comes from the current catalog. Changing products clears the restart offer and requires that product's attempt to be checked separately.
+
+If Stripe is unavailable, the session is still open, Checkout completed before its webhook arrived, or the 23-hour recovery window ended with no persisted session, keep the original key. Retry the status check after the displayed delay or ask an administrator to reconcile it. The UI does not offer a new attempt in these cases. A paid/refunded attempt replays its result even after its session deadline.
+
 ## Request a test refund
 
 Open a succeeded Stripe test payment, wait for detail eligibility to load, and choose **Refund test payment**. Confirm the full displayed amount/currency. Submission is disabled while pending. Review the returned status and refresh after `charge.refunded` or `refund.updated`; pending refunds may need a later Stripe event. Live keys, local simulations, and ineligible payments are rejected.

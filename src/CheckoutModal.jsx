@@ -6,6 +6,9 @@ export default function CheckoutModal({
   products,
   onClose,
   onCreate,
+  onRestart,
+  restartProductId,
+  onProductChange,
   submitting,
   error,
   formatPrice,
@@ -15,6 +18,7 @@ export default function CheckoutModal({
   );
   const selected =
     products.find((product) => product.id === selectedId) || products[0];
+  const canRestart = selected && restartProductId === selected.id;
   const dialog = useRef(null);
   useDialogFocus(dialog, onClose, submitting);
   return (
@@ -52,7 +56,10 @@ export default function CheckoutModal({
                   className={`checkout-product ${selected?.id === product.id ? "selected" : ""}`}
                   aria-pressed={selected?.id === product.id}
                   disabled={submitting}
-                  onClick={() => setSelectedId(product.id)}
+                  onClick={() => {
+                    if (selectedId !== product.id) onProductChange?.();
+                    setSelectedId(product.id);
+                  }}
                 >
                   <div className={`product-icon ${product.color}`}>
                     <Package size={18} />
@@ -89,7 +96,7 @@ export default function CheckoutModal({
             className="primary checkout-submit"
             disabled={!selected || submitting}
             aria-describedby={error ? "checkout-error" : undefined}
-            onClick={() => selected && onCreate(selected)}
+            onClick={() => selected && (canRestart ? onRestart(selected) : onCreate(selected))}
           >
             {submitting ? (
               <>
@@ -97,7 +104,7 @@ export default function CheckoutModal({
               </>
             ) : (
               <>
-                Create test payment <ArrowUpRight size={15} />
+                {canRestart ? "Start new checkout" : "Create test payment"} <ArrowUpRight size={15} />
               </>
             )}
           </button>

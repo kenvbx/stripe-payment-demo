@@ -100,7 +100,7 @@ class CheckoutRecoveryTest extends TestCase
         $this->postJson('/api/payments/checkout', $this->payload)->assertOk();
     }
 
-    public function test_retry_window_and_expired_sessions_never_create_another_session(): void
+    public function test_retry_window_and_unverifiable_sessions_never_create_another_session(): void
     {
         $this->mock(StripeCheckoutGateway::class)->shouldReceive('create')->once()->andThrow(new \RuntimeException('Timeout'));
         $this->postJson('/api/payments/checkout', $this->payload)->assertStatus(503);
@@ -108,7 +108,7 @@ class CheckoutRecoveryTest extends TestCase
         $payment->created_at = now()->subHours(23); $payment->save();
         $this->postJson('/api/payments/checkout', $this->payload)->assertConflict()->assertJsonPath('error_code', 'CHECKOUT_RETRY_EXPIRED');
         $payment->update(['checkout_state' => 'complete', 'checkout_expires_at' => now()->subSecond()]);
-        $this->postJson('/api/payments/checkout', $this->payload)->assertConflict()->assertJsonPath('error_code', 'CHECKOUT_EXPIRED');
+        $this->postJson('/api/payments/checkout', $this->payload)->assertStatus(503)->assertJsonPath('error_code', 'CHECKOUT_STATUS_UNAVAILABLE')->assertJsonPath('restart_allowed', false);
     }
 
     public function test_checkout_finalization_preserves_a_terminal_webhook_status(): void

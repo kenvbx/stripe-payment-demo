@@ -41,14 +41,20 @@ For retryable errors, retain the exact input/key and wait at least the `Retry-Af
 | --- | --- |
 | `IDEMPOTENCY_CONFLICT` / 409 | Different input or legacy attempt. Reconcile the original attempt; never blindly replace an ambiguous key. |
 | `CHECKOUT_IN_PROGRESS` / 409 | Retry the same request after the indicated delay. |
-| `CHECKOUT_EXPIRED` / 409 | Existing session expired; review the payment before starting a new attempt. |
+| `CHECKOUT_EXPIRED` / 409 | Stripe verified the exact session is expired and unpaid. Offer an explicit new attempt only when `restart_allowed` is true. |
+| `CHECKOUT_AWAITING_CONFIRMATION` / 409 | Remote Checkout completed; retain the key and wait for the verified payment event or administrator reconciliation. |
+| `CHECKOUT_STATUS_UNAVAILABLE` / 503 | Session expiry/payment status could not be verified. Retain the key and retry; do not start another attempt. |
 | `CHECKOUT_RETRY_EXPIRED` / 409 | Safe recovery window ended. Administrator reconciliation required. |
 | `STRIPE_TEST_MODE_REQUIRED` / 422 | Configure a test secret on the server. |
 | `CHECKOUT_REJECTED` / 422 | Administrator must inspect product/Stripe configuration. |
 | `CHECKOUT_UNAVAILABLE` or `CHECKOUT_RECOVERY_REQUIRED` / 503 | Retry the same request when `retryable` is true. |
 | `STRIPE_CONFIGURATION_ERROR` / 503 | Administrator must fix credentials. |
 
-Service errors include `message`, `error_code`, and `retryable`. Retryable service errors include `Retry-After: 5`; framework validation errors return 422 with `message` and `errors`. Rate limiting returns 429.
+Service errors include `message`, `error_code`, `retryable`, and `restart_allowed`. Only `CHECKOUT_EXPIRED` after a Stripe lookup can set `restart_allowed: true`. Retryable service errors include `Retry-After: 5`; framework validation errors return 422 with `message` and `errors`. Rate limiting returns 429.
+
+When a persisted session deadline has passed, the server retrieves the exact Stripe session outside the database transaction, then rechecks the current payment under a row lock. A local clock deadline alone never authorizes key rotation. Succeeded/refunded payments replay with 200 and no redirect even after expiry. Completed or paid remote sessions waiting for a webhook cannot be restarted through this flow.
+
+On verified expiry, the browser keeps the old key until the user presses **Start new checkout**. It then replaces that product's key and submits a separate attempt using the current catalog. The old payment/session and event history remain intact. Failures of the new request retain the new key across retries and reloads. No automatic restart occurs on timeout, unknown status, input conflict, or an expired safe-retry window.
 
 ## Webhooks and refunds
 

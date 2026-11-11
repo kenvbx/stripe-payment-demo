@@ -34,9 +34,11 @@ The webhook endpoint verifies `Stripe-Signature`, locks the payment row, ignores
 
 ## Checkout error contract
 
-`POST /api/payments/checkout` requires `product_id`, customer name/email, and an idempotency key (8–120 characters). A new checkout returns 201; recovery/replay returns 200 with `idempotent_replay: true`. Use the same body and key after a retryable response. Errors include `message`, `error_code`, and `retryable`; retryable responses also send `Retry-After: 5`.
+`POST /api/payments/checkout` requires `product_id`, customer name/email, and an idempotency key (8–120 characters). A new checkout returns 201; recovery/replay returns 200 with `idempotent_replay: true`. Use the same body and key after a retryable response. Errors include `message`, `error_code`, `retryable`, and `restart_allowed`; retryable responses also send `Retry-After: 5`.
 
 The recovery migration adds an immutable request snapshot and a two-minute processing claim. Apply migrations before deploying the updated API. Pending attempts older than 23 hours return `CHECKOUT_RETRY_EXPIRED` and need administrator reconciliation before another checkout is started. Legacy rows without a fingerprint return `IDEMPOTENCY_CONFLICT`.
+
+Completed sessions past their deadline are verified against Stripe before exposing `CHECKOUT_EXPIRED` with `restart_allowed: true`. Only an exact expired/unpaid session permits an explicit new browser attempt. Unverified/completed sessions retain their key; succeeded/refunded payments replay without another redirect. See [the API contract](../docs/API.md#create-or-recover-checkout).
 
 Feature tests use a fake Stripe gateway/HTTP transport. `tests/Integration/checkout-concurrency.php` runs two real PHP workers against the disposable `stripe_demo_ci` PostgreSQL database in Docker CI and verifies one payment, one gateway invocation, and stable replay.
 

@@ -80,7 +80,7 @@ cd backend
 php artisan test --no-coverage
 ```
 
-CI runs the Laravel feature suite on SQLite and PostgreSQL 16, browser tests in explicit simulation/API configurations, and a production-image PostgreSQL integration test using independent workers. The concurrency test forces simultaneous inserts and overlapping requests, verifies one payment/gateway call, and checks stable replay. A separate refund race commits webhook success before releasing a delayed pending API response, then verifies terminal state, timestamps, and replay. Stripe transports and browser API responses are mocked in automated checks; this is not evidence of a live Stripe transaction.
+CI runs the Laravel feature suite on SQLite and PostgreSQL 16, browser tests in explicit simulation/API configurations, and a production-image PostgreSQL integration test using independent workers. The concurrency test forces simultaneous inserts and overlapping requests, verifies one payment/gateway call, and checks stable replay. A separate refund race commits webhook success before releasing a delayed pending API response, then verifies terminal state, timestamps, and replay. Expired Checkout recovery verifies Stripe expiry/unpaid status before offering an explicit new attempt, preserves old records, and retains replacement keys after ambiguous failures. Stripe transports and browser API responses are mocked in automated checks; this is not evidence of a live Stripe transaction.
 
 ## Documentation
 

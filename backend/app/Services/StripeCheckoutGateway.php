@@ -15,6 +15,18 @@ class StripeCheckoutGateway
 
     public function create(Payment $payment): Session
     {
+        return $this->request(fn (StripeClient $client) => $client->checkout->sessions->create($payment->checkout_parameters, [
+            'idempotency_key' => 'checkout-'.$payment->idempotency_key,
+        ]));
+    }
+
+    public function retrieve(string $sessionId): Session
+    {
+        return $this->request(fn (StripeClient $client) => $client->checkout->sessions->retrieve($sessionId));
+    }
+
+    private function request(callable $operation): Session
+    {
         $http = $this->http;
         if (!$http) {
             $http = new CurlClient();
@@ -25,9 +37,7 @@ class StripeCheckoutGateway
         ApiRequestor::setHttpClient($http);
         try {
             $client = new StripeClient(['api_key' => config('services.stripe.secret'), 'max_network_retries' => 1]);
-            return $client->checkout->sessions->create($payment->checkout_parameters, [
-                'idempotency_key' => 'checkout-'.$payment->idempotency_key,
-            ]);
+            return $operation($client);
         } finally {
             ApiRequestor::setHttpClient($previous);
         }

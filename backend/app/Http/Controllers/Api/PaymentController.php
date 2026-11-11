@@ -70,6 +70,7 @@ class PaymentController extends Controller
         } catch (CheckoutException $exception) {
             $response = response()->json([
                 'message' => $exception->getMessage(), 'error_code' => $exception->errorCode, 'retryable' => $exception->retryable,
+                'restart_allowed' => $exception->restartAllowed,
             ], $exception->httpStatus)->header('Cache-Control', 'no-store');
             return $exception->retryable ? $response->header('Retry-After', '5') : $response;
         }
