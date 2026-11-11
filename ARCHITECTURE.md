@@ -34,6 +34,8 @@ Webhook delivery state is independent: `received → processed | ignored | faile
 
 Payment-level manual retry selects the oldest associated received/failed verified event and replays its stored snapshot. One request processes one event. No stored event returns 422; a processing failure returns 503. Stripe controls automatic redelivery; there is no application retry scheduler.
 
+Refund updates from API responses and verified events share `RefundStateMachine`. Short row locks surround state reads/writes, never the Stripe call. Terminal refund states cannot regress for the same refund ID. Only confirmed full success changes the payment to refunded; existing attempts replay without another Stripe call. Failed/canceled attempts require manual reconciliation.
+
 ## Browser behavior
 
 `VITE_USE_API=false` selects explicit local simulation. In API mode there is no sample catalog substitution after a connection error and no fabricated successful checkout. Pending Checkout keys persist per product in sessionStorage; authentication tokens stay in memory.

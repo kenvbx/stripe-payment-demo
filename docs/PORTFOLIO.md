@@ -44,6 +44,7 @@ The detail view shows payment identifiers, customer and product information, web
 | Duplicate event protection and delivery attempts | `backend/app/Services/StripeWebhookProcessor.php` and `backend/tests/Feature/PaymentApiTest.php` |
 | Persistent webhook event log | `backend/app/Models/WebhookEvent.php`, its migration, and `GET /api/webhook-events` |
 | Checkout recovery and idempotency | `backend/tests/Feature/CheckoutRecoveryTest.php`: timeout/local-save recovery, immutable Stripe parameters, input conflicts, expired claims, safe retry window, and SDK request contract. |
+| Refund state machine | `backend/tests/Feature/RefundStateMachineTest.php` covers terminal transitions, signed events, manual event replay, and late API responses. `backend/tests/Integration/refund-concurrency.php` verifies webhook/API ordering in separate PostgreSQL processes with a fake Stripe gateway. |
 | Concurrent checkout on PostgreSQL | `backend/tests/Integration/checkout-concurrency.php` forces overlapping requests and simultaneous inserts with independent workers inside the deployment image in CI; verifies unique-key recovery, input conflicts, immutable parameters, and replay using a fake gateway. |
 | PostgreSQL regression coverage | The complete Laravel feature suite runs against both SQLite and PostgreSQL 16 in the CI database matrix. |
 | Browser checkout failures | `e2e/checkout-recovery.spec.js`: pending-state controls, error display, and same-key recovery across reload. |

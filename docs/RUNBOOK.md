@@ -26,6 +26,8 @@ Stripe handles automatic redelivery. The application does not schedule a backgro
 
 Open a succeeded Stripe test payment, wait for detail eligibility to load, and choose **Refund test payment**. Confirm the full displayed amount/currency. Submission is disabled while pending. Review the returned status and refresh after `charge.refunded` or `refund.updated`; pending refunds may need a later Stripe event. Live keys, local simulations, and ineligible payments are rejected.
 
+For `pending`, wait and refresh after a verified Stripe event. For `requires_action`, inspect the refund in the Stripe Dashboard and complete the required action. For `failed` or `canceled`, reconcile the attempt in Stripe before considering another refund; the demo intentionally exposes no automatic retry of terminal attempts. These states leave the payment as `succeeded`. Repeating the API request returns the stored attempt, without issuing a new Stripe refund. A completed refund replays with 200 as well. Only a confirmed full success marks the payment `refunded`.
+
 ## Authentication ended
 
 401/403 responses clear the dashboard's private records. Sign in again with a provisioned administrator. Tokens live only in memory and expire after one hour. Reload also requires sign in. If role/ability is missing, correct the administrator provisioning on the server; there is no browser role editor.

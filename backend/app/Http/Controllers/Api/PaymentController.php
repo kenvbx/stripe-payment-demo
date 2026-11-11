@@ -7,6 +7,8 @@ use App\Models\Payment;
 use App\Exceptions\CheckoutException;
 use App\Services\CheckoutService;
 use App\Services\StripeRefundService;
+use App\Services\RefundStateMachine;
+use Illuminate\Support\Facades\DB;
 use App\Services\StripeWebhookProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -79,16 +81,22 @@ class PaymentController extends Controller
         ], $result['replay'] ? 200 : 201)->header('Cache-Control', 'no-store');
     }
 
-    public function refund(Payment $payment, StripeRefundService $refundService): JsonResponse
+    public function refund(Payment $payment, StripeRefundService $refundService, RefundStateMachine $refundStates): JsonResponse
     {
         if (!$refundService->testModeEnabled()) {
             return response()->json(['message' => 'Refunds are available only when Stripe test mode is configured.'], 422);
         }
+        // Read current state under lock; never hold the lock during the Stripe request.
+        $payment = DB::transaction(fn () => Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail());
+        if ($payment->status === 'refunded' || $payment->refund_status === 'succeeded') {
+            return response()->json(['data' => $payment, 'refund_status' => $payment->refund_status, 'idempotent_replay' => true]);
+        }
         if ($payment->status !== 'succeeded' || blank($payment->stripe_payment_intent_id)) {
             return response()->json(['message' => 'Only paid Stripe transactions can be refunded.'], 422);
         }
-        if ($payment->refund_status === 'succeeded') {
-            return response()->json(['data' => $payment, 'idempotent_replay' => true]);
+        if (filled($payment->stripe_refund_id) || filled($payment->refund_status)) {
+            // Replay pending/failed/canceled attempts, without silently creating another refund.
+            return response()->json(['data' => $payment, 'refund_status' => $payment->refund_status, 'idempotent_replay' => true]);
         }
 
         try {
@@ -97,14 +105,12 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Stripe could not create the refund. Check the test-mode payment and try again.'], 502);
         }
 
-        $payment->update([
-            'stripe_refund_id' => $refund->id,
-            'refund_status' => $refund->status,
-            'status' => $refund->status === 'succeeded' ? 'refunded' : $payment->status,
-            'refunded_at' => $refund->status === 'succeeded' ? now() : $payment->refunded_at,
-        ]);
-
-        return response()->json(['data' => $payment->fresh(), 'refund_status' => $refund->status], 201);
+        $payment = DB::transaction(function () use ($payment, $refund, $refundStates): Payment {
+            $locked = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $refundStates->apply($locked, $refund->id, (string) $refund->status, true);
+            return $locked->fresh();
+        });
+        return response()->json(['data' => $payment, 'refund_status' => $payment->refund_status], 201);
     }
 
     public function retryWebhook(Payment $payment, StripeWebhookProcessor $processor): JsonResponse

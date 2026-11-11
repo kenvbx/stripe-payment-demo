@@ -98,13 +98,27 @@ class StripeWebhookProcessor
                 // Stripe may deliver an event before checkout persistence has committed.
                 if (!$payment) throw new RuntimeException('No matching payment exists yet. Retry after checkout has been persisted.');
 
+                if (in_array($record->type, ['charge.refunded', 'refund.updated'], true)) {
+                    $aggregate = $record->type === 'charge.refunded';
+                    $applied = app(RefundStateMachine::class)->apply(
+                        $payment,
+                        $aggregate ? ($object['refund_id'] ?? null) : $objectId,
+                        $aggregate ? 'succeeded' : (string) ($object['status'] ?? ''),
+                        $aggregate ? (bool) ($object['refunded'] ?? false) : is_numeric($object['amount'] ?? null) && $object['amount'] >= $payment->amount,
+                        $aggregate,
+                    );
+                    if ($applied) {
+                        $payment->update(['stripe_event_id' => $record->event_id, 'webhook_status' => 'processed', 'last_error' => null]);
+                    }
+                    $record->update(['payment_id' => $payment->id, 'status' => $applied ? 'processed' : 'ignored', 'processed_at' => now(), 'last_error' => null]);
+                    return $record->fresh();
+                }
+
                 $target = match ($record->type) {
                     'checkout.session.completed' => in_array($object['payment_status'] ?? '', ['paid', 'no_payment_required'], true) ? 'succeeded' : 'processing',
                     'payment_intent.succeeded', 'checkout.session.async_payment_succeeded' => 'succeeded',
                     'checkout.session.async_payment_failed', 'payment_intent.payment_failed' => 'failed',
                     'payment_intent.processing' => 'processing',
-                    'charge.refunded' => ($object['refunded'] ?? false) ? 'refunded' : null,
-                    'refund.updated' => ($object['status'] ?? '') === 'succeeded' && ($object['amount'] ?? 0) >= $payment->amount ? 'refunded' : null,
                 };
                 if (!$target || !$this->canTransition($payment->status, $target)) {
                     $record->update(['payment_id' => $payment->id, 'status' => 'ignored', 'processed_at' => now(), 'last_error' => null]);
@@ -117,9 +131,6 @@ class StripeWebhookProcessor
                     'webhook_status' => 'processed',
                     'status' => $target,
                     'paid_at' => $target === 'succeeded' ? ($payment->paid_at ?? now()) : $payment->paid_at,
-                    'stripe_refund_id' => $target === 'refunded' ? ($record->type === 'refund.updated' ? $objectId : ($object['refund_id'] ?? $payment->stripe_refund_id)) : $payment->stripe_refund_id,
-                    'refund_status' => $target === 'refunded' ? 'succeeded' : $payment->refund_status,
-                    'refunded_at' => $target === 'refunded' ? ($payment->refunded_at ?? now()) : $payment->refunded_at,
                     'last_error' => null,
                 ]);
                 $record->update(['payment_id' => $payment->id, 'status' => 'processed', 'processed_at' => now(), 'last_error' => null]);

@@ -173,85 +173,97 @@ for (const [status, title] of [
   });
 }
 
-test("full refund confirmation traps focus and blocks closing during submission", async ({
-  page,
-}) => {
-  let refunded = false,
-    refundCalls = 0,
-    release;
-  const held = new Promise((resolve) => {
-    release = resolve;
-  });
-  await page.route("**/api/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === "/api/products")
-      return route.fulfill({ json: { data: [product] } });
-    if (path === "/api/admin/login")
-      return route.fulfill({
-        json: {
-          token: "refund-test-token",
-          expires_at: new Date(Date.now() + 3600000).toISOString(),
-          user: { name: "Admin" },
-        },
-      });
-    expect(route.request().headers().authorization).toBe(
-      "Bearer refund-test-token",
-    );
-    if (path === "/api/payments")
-      return route.fulfill({ json: { data: [payment] } });
-    if (path === "/api/webhook-events")
-      return route.fulfill({ json: { data: [] } });
-    if (path === "/api/payments/1/refund") {
-      refundCalls++;
-      await held;
-      refunded = true;
-      return route.fulfill({
-        json: { data: { ...payment, status: "refunded" } },
-      });
-    }
-    if (path === "/api/payments/1")
-      return route.fulfill({
-        json: {
-          data: {
-            ...payment,
-            status: refunded ? "refunded" : "succeeded",
-            refund_available: !refunded,
-            refund_status: refunded ? "succeeded" : null,
+for (const [refundStatus, message] of [
+  ["succeeded", "Test refund completed"],
+  ["pending", "Refund submitted; waiting for Stripe confirmation"],
+  ["requires_action", "Refund requires action; review it in the Stripe Dashboard"],
+  ["failed", "Refund failed; review it in the Stripe Dashboard before another attempt"],
+  ["canceled", "Refund canceled; review it in the Stripe Dashboard before another attempt"],
+]) {
+  test(`full refund ${refundStatus} preserves dialog behavior and shows accurate guidance`, async ({
+    page,
+  }) => {
+    let refunded = false,
+      refundCalls = 0,
+      release;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/products")
+        return route.fulfill({ json: { data: [product] } });
+      if (path === "/api/admin/login")
+        return route.fulfill({
+          json: {
+            token: "refund-test-token",
+            expires_at: new Date(Date.now() + 3600000).toISOString(),
+            user: { name: "Admin" },
           },
-        },
-      });
-    throw new Error(`Unexpected request ${path}`);
+        });
+      expect(route.request().headers().authorization).toBe(
+        "Bearer refund-test-token",
+      );
+      if (path === "/api/payments")
+        return route.fulfill({ json: { data: [payment] } });
+      if (path === "/api/webhook-events")
+        return route.fulfill({ json: { data: [] } });
+      if (path === "/api/payments/1/refund") {
+        refundCalls++;
+        await held;
+        refunded = true;
+        return route.fulfill({
+          json: {
+            data: { ...payment, status: refundStatus === "succeeded" ? "refunded" : "succeeded", refund_status: refundStatus },
+            refund_status: refundStatus,
+          },
+        });
+      }
+      if (path === "/api/payments/1")
+        return route.fulfill({
+          json: {
+            data: {
+              ...payment,
+              status: refunded && refundStatus === "succeeded" ? "refunded" : "succeeded",
+              refund_available: !refunded,
+              refund_status: refunded ? refundStatus : null,
+            },
+          },
+        });
+      throw new Error(`Unexpected request ${path}`);
+    });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Admin sign in", exact: true })
+      .click();
+    await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+    await page.getByLabel("Password", { exact: true }).fill("test-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.getByRole("button", { name: "View pi_euro details" }).click();
+    await page.getByRole("button", { name: "Refund test payment" }).click();
+    await expect(page.getByRole("dialog")).toContainText("€45.00");
+    await expect(
+      page.getByRole("button", { name: "Close refund" }),
+    ).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      page.getByRole("button", { name: "Confirm refund" }),
+    ).toBeFocused();
+    await page.getByRole("button", { name: "Confirm refund" }).click();
+    await expect(
+      page.getByRole("button", { name: "Close refund" }),
+    ).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(refundCalls).toBe(1);
+    release();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByRole("status").filter({ hasText: message }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Refund test payment" }),
+    ).toHaveCount(0);
   });
-  await page.goto("/");
-  await page
-    .getByRole("button", { name: "Admin sign in", exact: true })
-    .click();
-  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
-  await page.getByLabel("Password", { exact: true }).fill("test-password");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByRole("button", { name: "View pi_euro details" }).click();
-  await page.getByRole("button", { name: "Refund test payment" }).click();
-  await expect(page.getByRole("dialog")).toContainText("€45.00");
-  await expect(
-    page.getByRole("button", { name: "Close refund" }),
-  ).toBeFocused();
-  await page.keyboard.press("Shift+Tab");
-  await expect(
-    page.getByRole("button", { name: "Confirm refund" }),
-  ).toBeFocused();
-  await page.getByRole("button", { name: "Confirm refund" }).click();
-  await expect(
-    page.getByRole("button", { name: "Close refund" }),
-  ).toBeDisabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toBeVisible();
-  expect(refundCalls).toBe(1);
-  release();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(
-    page.getByText("Test refund completed", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Refund test payment" }),
-  ).toHaveCount(0);
-});
+
+}

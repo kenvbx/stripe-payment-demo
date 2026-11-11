@@ -33,6 +33,14 @@ import {
 } from "./WorkspacePages";
 import useDialogFocus from "./useDialogFocus";
 
+const refundMessages = {
+  pending: "Refund submitted; waiting for Stripe confirmation",
+  requires_action: "Refund requires action; review it in the Stripe Dashboard",
+  failed: "Refund failed; review it in the Stripe Dashboard before another attempt",
+  canceled: "Refund canceled; review it in the Stripe Dashboard before another attempt",
+  succeeded: "Test refund completed",
+};
+
 const initialPayments = [
   {
     id: "pi_3Qx9k7J2",
@@ -569,7 +577,8 @@ function App() {
       notify(
         refreshed.status === "refunded"
           ? "Test refund completed"
-          : "Refund submitted; waiting for Stripe confirmation",
+          : refundMessages[refreshed.refundStatus] ||
+            "Refresh payment to check refund status",
       );
       return true;
     } catch (error) {
@@ -1262,6 +1271,15 @@ function PaymentDetail({
                 <DetailField
                   label="Refund status"
                   value={payment.refundStatus}
+                />
+              )}
+              {payment.refundStatus && (
+                <DetailField
+                  label="Refund guidance"
+                  value={
+                    refundMessages[payment.refundStatus] ||
+                    "Refresh payment to check refund status"
+                  }
                 />
               )}
               {payment.refundId && (

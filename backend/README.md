@@ -55,9 +55,10 @@ export DB_URL=''
 php artisan test --no-coverage
 php artisan db:seed --force
 php tests/Integration/checkout-concurrency.php
+php tests/Integration/refund-concurrency.php
 ```
 
-The standalone test also accepts Docker CI's `stripe_demo_ci` database. It uses independent PHP processes and explicit barriers to verify:
+The standalone tests also accept Docker CI's `stripe_demo_ci` database. It uses independent PHP processes and explicit barriers to verify:
 
 - A duplicate request returns `CHECKOUT_IN_PROGRESS` while the owner waits for the gateway.
 - Conflicting customer input is rejected while the original request is active.
@@ -65,3 +66,5 @@ The standalone test also accepts Docker CI's `stripe_demo_ci` database. It uses 
 - Persisted parameters stay unchanged, claims are cleared, and replay returns the same payment without another gateway call.
 
 Worker waits and database lock/statement timeouts are bounded. Workers and fixtures are cleaned up on failure. Stripe is replaced with a local fake gateway; these are real PostgreSQL integration checks, not live Stripe API checks.
+
+`tests/Integration/refund-concurrency.php` holds a fake Stripe response while an independent webhook worker commits full success, then verifies that the delayed pending response cannot overwrite it. It also checks timestamp preservation and completed-refund replay. Both workers use real PostgreSQL connections; no real Stripe request is made.

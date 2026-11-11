@@ -111,6 +111,8 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Authorization: Bearer $task_token" http://127.0.0.1:10000/api/payments)" = 401
       - name: Verify concurrent checkout against PostgreSQL
         run: docker exec stripe-payment-demo-ci php tests/Integration/checkout-concurrency.php
+      - name: Verify refund webhook and API race against PostgreSQL
+        run: docker exec stripe-payment-demo-ci php tests/Integration/refund-concurrency.php
       - name: Show container logs on failure
         if: failure()
         run: docker logs stripe-payment-demo-ci || true
