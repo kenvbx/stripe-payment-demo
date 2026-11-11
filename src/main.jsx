@@ -147,10 +147,20 @@ function App() {
   }
   async function retryWebhook(id) {
     const payment = payments.find(item => item.id === id);
-    if (API_ENABLED && payment?.backendId) {
-      try { const response = await apiRequest(`/payments/${payment.backendId}/retry-webhook`, { method: 'POST' }); setPayments(current => current.map(item => item.id === id ? normalizePayment(response.data) : item)); notify('Webhook retry processed by Laravel API'); return; } catch { setApiConnected(false); }
+    if (!API_ENABLED || !payment?.backendId) {
+      notify('Retry requires the Laravel API and a stored verified event');
+      return;
     }
-    setPayments(current => current.map(p => p.id === id ? { ...p, webhook: 'processed', status: p.status === 'failed' ? 'succeeded' : p.status } : p)); notify('Webhook queued for local retry');
+    try {
+      const response = await apiRequest(`/payments/${payment.backendId}/retry-webhook`, { method: 'POST' });
+      const refreshed = normalizePayment(response.data);
+      setPayments(current => current.map(item => item.backendId === refreshed.backendId ? refreshed : item));
+      setSelectedPayment(current => current?.backendId === refreshed.backendId ? refreshed : current);
+      apiRequest('/webhook-events?per_page=100').then(events => setWebhookEvents((events.data || []).map(normalizeWebhookEvent))).catch(() => {});
+      notify(response.webhook_event.status === 'ignored' ? 'Event replayed; payment state was preserved' : 'Verified webhook event processed');
+    } catch (error) {
+      notify(error.message || 'Webhook retry failed');
+    }
   }
   return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><Zap size={15}/></span><span>payflow</span><small>DEMO</small></div><div className="mode-pill"><span className="pulse"/> Stripe test mode · {apiConnected ? 'Laravel API' : 'Local fallback'}</div><nav><p>Workspace</p><NavItem icon={<LayoutDashboard size={17}/>} label="Overview" active={tab === 'Overview'} onClick={() => setTab('Overview')}/><NavItem icon={<CreditCard size={17}/>} label="Payments" count={payments.length} active={tab === 'Payments'} onClick={() => setTab('Payments')}/><NavItem icon={<Package size={17}/>} label="Products" active={tab === 'Products'} onClick={() => setTab('Products')}/><NavItem icon={<Webhook size={17}/>} label="Webhooks" active={tab === 'Webhooks'} onClick={() => setTab('Webhooks')}/><p>Build</p><NavItem icon={<Code2 size={17}/>} label="API explorer" active={tab === 'API explorer'} onClick={() => setTab('API explorer')}/><NavItem icon={<Settings2 size={17}/>} label="Settings" active={tab === 'Settings'} onClick={() => setTab('Settings')}/></nav><div className="sidebar-bottom"><div className="help-card"><CircleHelp size={17}/><div><strong>Payment docs</strong><span>Learn the flow</span></div><ChevronRight size={15}/></div><div className="profile"><div className="avatar">TP</div><div><strong>Tuyen Pham</strong><span>Developer</span></div><MoreHorizontal size={17}/></div></div></aside><main className="main"><header className="topbar"><button className="mobile-menu"><Menu size={20}/></button><div className="crumb"><span>Payment operations</span><ChevronRight size={14}/><strong>{tab}</strong></div><div className="top-actions"><button className="icon-btn" aria-label="Search"><Search size={18}/></button><div className="avatar small">TP</div></div></header><div className="content">{checkoutResult ? <CheckoutResultPage result={checkoutResult} onRefresh={refreshCheckoutResult} onReturn={closeCheckoutResult} onTryAgain={() => { closeCheckoutResult(); setModal('checkout'); }}/>: <>{tab === 'Overview' && <Overview payments={payments} volume={volume} onCheckout={() => setModal('checkout')} onRetry={retryWebhook} onViewPayments={() => setTab('Payments')} onSelectPayment={openPayment}/>} {tab === 'Payments' && <Payments payments={visible} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} onRetry={retryWebhook} onSelectPayment={openPayment}/>} {tab === 'Payment detail' && selectedPayment && <PaymentDetail payment={selectedPayment} onBack={() => setTab('Payments')} onRetry={retryWebhook} onRefund={refundPayment}/>} {tab === 'Products' && <Products products={products} onCheckout={simulateCheckout}/>} {tab === 'Webhooks' && <Webhooks payments={payments} webhookEvents={webhookEvents} apiConnected={apiConnected} onRetry={retryWebhook}/>} {tab === 'API explorer' && <ApiExplorer onCopy={() => notify('Request copied to clipboard')}/>} {tab === 'Settings' && <Settings/>}</>}</div></main>{modal === 'checkout' && <CheckoutModal products={products} onClose={() => setModal(null)} onCreate={simulateCheckout}/>} {toast && <div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }

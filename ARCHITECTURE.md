@@ -16,11 +16,15 @@ Laravel modular monolith:
 
 ## State model
 
-`created → processing → succeeded | failed`; `succeeded → refunded` is an explicit transition. Webhook delivery is independent: `pending → processed | retrying | dead_letter`.
+`created → processing → succeeded | failed`; confirmed success can recover `failed`, and a verified full refund can move a payment to `refunded` even when its success event arrives later. `succeeded` never regresses to `processing` or `failed`; `refunded` is terminal. Repeated confirmations preserve the first recorded payment/refund timestamps. A completed Checkout Session remains `processing` unless its payment status is `paid` or `no_payment_required`.
+
+Webhook event delivery is independent: `received → processed | ignored | failed`. Unsupported events and transitions that would regress payment state are acknowledged as `ignored`. An unmatched supported event is retained as `failed` and returns HTTP 500 so Stripe can redeliver it after the payment is persisted.
 
 ## Consistency and reliability
 
-The database is the source of truth after a verified webhook. Checkout Session creation accepts an idempotency key with a unique constraint and redirects to Stripe-hosted test checkout. Webhook processing locks the event row and ignores an already processed Stripe event ID. Retries are bounded and use exponential backoff. The demo UI exposes pending state rather than hiding eventual consistency.
+The database is the source of truth after a verified webhook. Checkout Session creation accepts an idempotency key with a unique constraint and redirects to Stripe-hosted test checkout. Webhook processing locks both event and payment rows. Already processed/ignored event IDs are acknowledged without reapplying changes.
+
+`POST /api/payments/{payment}/retry-webhook` selects the oldest received/failed verified event associated with that payment or its Stripe identifiers, then runs the same processor against the stored field snapshot. One call retries one event. Each processing attempt increments the event's audit counter; a failure is retained even if the payment update transaction rolls back. A missing retryable event returns HTTP 422; processing failure returns HTTP 503. Manual retries do not manufacture payment success, and the frontend shows API errors without simulating a successful retry. Stripe controls automatic redelivery/backoff; no application retry scheduler is implemented.
 
 ## Initial workload assumptions
 

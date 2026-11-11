@@ -115,7 +115,7 @@ class PaymentApiTest extends TestCase
     public function test_checkout_completed_webhook_marks_payment_succeeded(): void
     {
         $payment = Payment::create($this->paymentAttributes(['stripe_checkout_session_id' => 'cs_test_123', 'status' => 'processing']));
-        $this->signedWebhook('evt_checkout_completed', 'checkout.session.completed', ['id' => 'cs_test_123', 'payment_intent' => 'pi_test_123', 'object' => 'checkout.session'])->assertOk();
+        $this->signedWebhook('evt_checkout_completed', 'checkout.session.completed', ['id' => 'cs_test_123', 'payment_intent' => 'pi_test_123', 'object' => 'checkout.session', 'payment_status' => 'paid'])->assertOk();
         $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'succeeded', 'webhook_status' => 'processed', 'stripe_event_id' => 'evt_checkout_completed', 'stripe_payment_intent_id' => 'pi_test_123']);
         $this->assertDatabaseHas('webhook_events', ['payment_id' => $payment->id, 'event_id' => 'evt_checkout_completed', 'type' => 'checkout.session.completed', 'status' => 'processed', 'attempts' => 1]);
     }
@@ -130,7 +130,7 @@ class PaymentApiTest extends TestCase
     public function test_webhook_event_log_lists_verified_events(): void
     {
         Payment::create($this->paymentAttributes(['stripe_checkout_session_id' => 'cs_logged_123', 'status' => 'processing']));
-        $this->signedWebhook('evt_logged', 'checkout.session.completed', ['id' => 'cs_logged_123', 'payment_intent' => 'pi_logged', 'object' => 'checkout.session'])->assertOk();
+        $this->signedWebhook('evt_logged', 'checkout.session.completed', ['id' => 'cs_logged_123', 'payment_intent' => 'pi_logged', 'object' => 'checkout.session', 'payment_status' => 'paid'])->assertOk();
 
         $this->getJson('/api/webhook-events')
             ->assertOk()
@@ -150,17 +150,18 @@ class PaymentApiTest extends TestCase
     public function test_duplicate_webhook_event_is_ignored(): void
     {
         $payment = Payment::create($this->paymentAttributes(['stripe_checkout_session_id' => 'cs_duplicate', 'status' => 'processing']));
-        $event = ['id' => 'evt_duplicate', 'type' => 'checkout.session.completed', 'data' => ['object' => ['id' => 'cs_duplicate', 'payment_intent' => 'pi_duplicate', 'object' => 'checkout.session']]];
+        $event = ['id' => 'evt_duplicate', 'type' => 'checkout.session.completed', 'data' => ['object' => ['id' => 'cs_duplicate', 'payment_intent' => 'pi_duplicate', 'object' => 'checkout.session', 'payment_status' => 'paid']]];
         $this->postSignedPayload($event)->assertOk(); $this->postSignedPayload($event)->assertOk();
         $this->assertDatabaseCount('payments', 1); $this->assertDatabaseHas('payments', ['id' => $payment->id, 'stripe_event_id' => 'evt_duplicate', 'status' => 'succeeded']);
         $this->assertDatabaseCount('webhook_events', 1);
         $this->assertDatabaseHas('webhook_events', ['event_id' => 'evt_duplicate', 'attempts' => 2, 'status' => 'processed']);
     }
 
-    public function test_failed_webhook_can_be_retried(): void
+    public function test_retry_without_a_verified_event_preserves_payment_state(): void
     {
         $payment = Payment::create($this->paymentAttributes(['stripe_payment_intent_id' => 'pi_demo_test', 'status' => 'failed', 'webhook_status' => 'retrying', 'idempotency_key' => 'retry-test']));
-        $this->postJson('/api/payments/'.$payment->id.'/retry-webhook')->assertOk()->assertJsonPath('data.webhook_status', 'processed')->assertJsonPath('data.status', 'succeeded');
+        $this->postJson('/api/payments/'.$payment->id.'/retry-webhook')->assertUnprocessable();
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'failed', 'webhook_status' => 'retrying']);
     }
 
     private function signedWebhook(string $id, string $type, array $object) { return $this->postSignedPayload(['id' => $id, 'type' => $type, 'data' => ['object' => $object]]); }

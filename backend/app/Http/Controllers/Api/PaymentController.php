@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Services\StripeRefundService;
+use App\Services\StripeWebhookProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -142,13 +143,20 @@ class PaymentController extends Controller
         return response()->json(['data' => $payment->fresh(), 'refund_status' => $refund->status], 201);
     }
 
-    public function retryWebhook(Payment $payment): JsonResponse
+    public function retryWebhook(Payment $payment, StripeWebhookProcessor $processor): JsonResponse
     {
-        $payment->update([
-            'webhook_status' => 'processed',
-            'status' => $payment->status === 'failed' ? 'succeeded' : $payment->status,
-            'last_error' => null,
+        try {
+            $event = $processor->retryForPayment($payment);
+        } catch (\RuntimeException) {
+            return response()->json(['message' => 'The verified event could not be processed. Check the webhook event log before retrying.'], 503);
+        }
+        if (!$event) {
+            return response()->json(['message' => 'No received or failed verified webhook event is available for this payment.'], 422);
+        }
+
+        return response()->json([
+            'data' => $payment->fresh()->load('webhookEvents'),
+            'webhook_event' => $event,
         ]);
-        return response()->json(['data' => $payment->fresh()]);
     }
 }

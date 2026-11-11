@@ -28,3 +28,14 @@ test('selects a catalog product and creates a local demo payment', async ({ page
   await expect(page.getByText('Demo customer')).toBeVisible();
   await expect(page.getByText('Pro workspace').last()).toBeVisible();
 });
+
+test('retry without a verified event cannot turn a failed payment into success', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('navigation').getByRole('button', { name: /^Payments/ }).click();
+  await page.getByRole('button', { name: 'failed', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: 'pi_3Qx7m4P8' });
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: 'Retry pi_3Qx7m4P8 webhook' }).click();
+  await expect(page.getByText('Retry requires the Laravel API and a stored verified event')).toBeVisible();
+  await expect(row.getByText('failed', { exact: true })).toBeVisible();
+});

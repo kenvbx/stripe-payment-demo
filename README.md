@@ -39,6 +39,10 @@ The Laravel database is the source of truth for the catalog. Seed the three samp
 
 Open a succeeded payment in the detail view and choose **Refund test payment**. The Laravel API requires a Stripe test secret, only accepts succeeded payments, and uses an idempotency key for the refund request. Stripe confirmation updates the payment to `refunded`; `charge.refunded` and `refund.updated` webhooks also synchronize refund state. Live Stripe keys are rejected by checkout and refund endpoints.
 
+## Webhook recovery
+
+Retry replays one received/failed event whose verified fields are already stored in the database. If no such event exists, the API returns 422; it never marks a payment successful just because retry was clicked. Unmatched supported events return 500 and remain retryable so Stripe can redeliver them. Late events cannot regress succeeded/refunded payments, and an unpaid completed Checkout Session waits for a confirmed success event.
+
 ## Laravel configuration
 
 The backend is a Laravel modular monolith using Stripe Checkout in test mode. With `STRIPE_SECRET` configured, checkout creation returns a Stripe-hosted Checkout URL and the browser redirects there. Configure the Stripe CLI to forward events to `/api/webhooks/stripe`:
