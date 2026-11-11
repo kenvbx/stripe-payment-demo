@@ -48,6 +48,6 @@ For a hosted demo, add a Stripe Dashboard test-mode endpoint:
 https://YOUR-RENDER-SERVICE.onrender.com/api/webhooks/stripe
 ```
 
-Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `payment_intent.succeeded`, `payment_intent.processing`, and `payment_intent.payment_failed`.
+Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `payment_intent.succeeded`, `payment_intent.processing`, and `payment_intent.payment_failed`, `charge.refunded`, and `refund.updated`.
 
 Never commit `.env`, Stripe secret keys, or webhook signing secrets.

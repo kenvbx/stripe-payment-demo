@@ -18,6 +18,8 @@ class StripeWebhookProcessor
             'id' => $objectId,
             'object' => (string) ($stripeObject->object ?? ''),
             'payment_intent' => is_string($stripeObject->payment_intent ?? null) ? $stripeObject->payment_intent : null,
+            'status' => (string) ($stripeObject->status ?? ''),
+            'refunded' => (bool) ($stripeObject->refunded ?? false),
         ]];
 
         $webhookEvent = DB::transaction(function () use ($event, $objectId, $eventData, $rawPayload): WebhookEvent {
@@ -53,6 +55,8 @@ class StripeWebhookProcessor
                     'checkout.session.completed', 'payment_intent.succeeded', 'checkout.session.async_payment_succeeded' => 'succeeded',
                     'checkout.session.async_payment_failed', 'payment_intent.payment_failed' => 'failed',
                     'payment_intent.processing' => 'processing',
+                    'charge.refunded' => ($object->refunded ?? false) ? 'refunded' : null,
+                    'refund.updated' => ($object->status ?? null) === 'succeeded' ? 'refunded' : null,
                     default => null,
                 };
                 if (!$payment || !$status) {
@@ -65,6 +69,9 @@ class StripeWebhookProcessor
                     'webhook_status' => 'processed',
                     'status' => $status,
                     'paid_at' => $status === 'succeeded' ? now() : $payment->paid_at,
+                    'stripe_refund_id' => $status === 'refunded' ? ($event->type === 'refund.updated' ? $object->id : ($object->refunds->data[0]->id ?? $payment->stripe_refund_id)) : $payment->stripe_refund_id,
+                    'refund_status' => $status === 'refunded' ? 'succeeded' : $payment->refund_status,
+                    'refunded_at' => $status === 'refunded' ? now() : $payment->refunded_at,
                 ]);
                 $record->update(['payment_id' => $payment->id, 'status' => 'processed', 'processed_at' => now(), 'last_error' => null]);
                 return $record->fresh();

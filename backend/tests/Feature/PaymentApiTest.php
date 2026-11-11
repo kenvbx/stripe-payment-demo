@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Models\Payment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use App\Services\StripeRefundService;
+use Mockery\MockInterface;
+use Stripe\Refund;
 
 class PaymentApiTest extends TestCase
 {
@@ -36,6 +39,57 @@ class PaymentApiTest extends TestCase
             ->assertJsonPath('data.confirmation_pending', true)
             ->assertJsonPath('data.product_name', 'Pro workspace');
         $this->getJson('/api/checkout/sessions/cs_unknown')->assertNotFound();
+    }
+
+    public function test_refund_is_blocked_when_live_key_is_configured(): void
+    {
+        config(['services.stripe.secret' => 'sk_live_never_use']);
+        $payment = Payment::create($this->paymentAttributes(['status' => 'succeeded', 'stripe_payment_intent_id' => 'pi_paid_live_guard']));
+
+        $this->postJson('/api/payments/'.$payment->id.'/refund')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Refunds are available only when Stripe test mode is configured.');
+    }
+
+    public function test_only_succeeded_payments_can_be_refunded(): void
+    {
+        config(['services.stripe.secret' => 'sk_test_demo']);
+        $payment = Payment::create($this->paymentAttributes(['status' => 'processing', 'stripe_payment_intent_id' => 'pi_pending_refund']));
+
+        $this->postJson('/api/payments/'.$payment->id.'/refund')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Only paid Stripe transactions can be refunded.');
+    }
+
+    public function test_full_test_refund_updates_payment_idempotently(): void
+    {
+        config(['services.stripe.secret' => 'sk_test_demo']);
+        $payment = Payment::create($this->paymentAttributes(['status' => 'succeeded', 'stripe_payment_intent_id' => 'pi_refund_test']));
+        $this->mock(StripeRefundService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('testModeEnabled')->once()->andReturn(true);
+            $mock->shouldReceive('createRefund')->once()->andReturn(Refund::constructFrom([
+                'id' => 're_test_123', 'status' => 'succeeded', 'payment_intent' => 'pi_refund_test',
+            ]));
+        });
+
+        $this->postJson('/api/payments/'.$payment->id.'/refund')
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'refunded')
+            ->assertJsonPath('data.refund_status', 'succeeded');
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'stripe_refund_id' => 're_test_123', 'status' => 'refunded']);
+    }
+
+    public function test_charge_refunded_webhook_updates_refund_state(): void
+    {
+        $payment = Payment::create($this->paymentAttributes(['stripe_payment_intent_id' => 'pi_webhook_refund', 'status' => 'succeeded']));
+        $this->signedWebhook('evt_charge_refunded', 'charge.refunded', [
+            'id' => 'ch_test_refunded', 'object' => 'charge', 'payment_intent' => 'pi_webhook_refund',
+            'refunded' => true, 'refunds' => ['data' => [['id' => 're_webhook_123']]],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id, 'status' => 'refunded', 'refund_status' => 'succeeded', 'stripe_refund_id' => 're_webhook_123',
+        ]);
     }
 
     public function test_checkout_completed_webhook_marks_payment_succeeded(): void

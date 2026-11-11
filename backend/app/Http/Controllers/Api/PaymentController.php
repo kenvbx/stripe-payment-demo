@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Services\StripeRefundService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,9 @@ class PaymentController extends Controller
 
     public function show(Payment $payment): JsonResponse
     {
-        return response()->json(['data' => $payment->load(['webhookEvents' => fn ($query) => $query->latest('received_at')])]);
+        $data = $payment->load(['webhookEvents' => fn ($query) => $query->latest('received_at')])->toArray();
+        $data['refund_available'] = app(StripeRefundService::class)->testModeEnabled() && $payment->status === 'succeeded' && filled($payment->stripe_payment_intent_id) && blank($payment->refund_status);
+        return response()->json(['data' => $data]);
     }
 
     public function checkoutSession(string $sessionId): JsonResponse
@@ -64,6 +67,11 @@ class PaymentController extends Controller
             return response()->json(['data' => $existing, 'checkout_url' => $existing->checkout_url, 'idempotent_replay' => true]);
         }
 
+        $stripeSecret = (string) config('services.stripe.secret');
+        if ($stripeSecret !== '' && !str_starts_with($stripeSecret, 'sk_test_') && !str_starts_with($stripeSecret, 'rk_test_')) {
+            return response()->json(['message' => 'This demo accepts Stripe test keys only.'], 422);
+        }
+
         $payment = DB::transaction(function () use ($data): Payment {
             $payment = Payment::create($data + ['currency' => 'usd', 'status' => 'created', 'webhook_status' => 'pending']);
             $stripeSecret = config('services.stripe.secret');
@@ -100,6 +108,34 @@ class PaymentController extends Controller
         });
 
         return response()->json(['data' => $payment, 'checkout_url' => $payment->checkout_url], 201);
+    }
+
+    public function refund(Payment $payment, StripeRefundService $refundService): JsonResponse
+    {
+        if (!$refundService->testModeEnabled()) {
+            return response()->json(['message' => 'Refunds are available only when Stripe test mode is configured.'], 422);
+        }
+        if ($payment->status !== 'succeeded' || blank($payment->stripe_payment_intent_id)) {
+            return response()->json(['message' => 'Only paid Stripe transactions can be refunded.'], 422);
+        }
+        if ($payment->refund_status === 'succeeded') {
+            return response()->json(['data' => $payment, 'idempotent_replay' => true]);
+        }
+
+        try {
+            $refund = $refundService->createRefund($payment);
+        } catch (\Stripe\Exception\ApiErrorException $exception) {
+            return response()->json(['message' => 'Stripe could not create the refund. Check the test-mode payment and try again.'], 502);
+        }
+
+        $payment->update([
+            'stripe_refund_id' => $refund->id,
+            'refund_status' => $refund->status,
+            'status' => $refund->status === 'succeeded' ? 'refunded' : $payment->status,
+            'refunded_at' => $refund->status === 'succeeded' ? now() : $payment->refunded_at,
+        ]);
+
+        return response()->json(['data' => $payment->fresh(), 'refund_status' => $refund->status], 201);
     }
 
     public function retryWebhook(Payment $payment): JsonResponse

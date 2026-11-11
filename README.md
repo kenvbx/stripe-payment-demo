@@ -1,6 +1,6 @@
 # Stripe Payment Demo
 
-Personal/demo project showing a Stripe test-mode payment flow with checkout creation, transaction history, webhook states, idempotency, and recovery paths. It is not a production payment system and makes no live-payment claims.
+Personal/demo project showing a Stripe test-mode payment flow with checkout creation, transaction history, webhook states, idempotency, recovery paths, and full refunds in Stripe test mode. It is not a production payment system and makes no live-payment claims.
 
 ## Run the frontend demo
 
@@ -29,7 +29,11 @@ npm run build
 
 The build is the current automated smoke check. Before a live Stripe integration, add PHPUnit/API tests for signature verification, duplicate events, idempotency, and payment state transitions.
 
-## Planned Laravel integration
+## Refund a test payment
+
+Open a succeeded payment in the detail view and choose **Refund test payment**. The Laravel API requires a Stripe test secret, only accepts succeeded payments, and uses an idempotency key for the refund request. Stripe confirmation updates the payment to `refunded`; `charge.refunded` and `refund.updated` webhooks also synchronize refund state. Live Stripe keys are rejected by checkout and refund endpoints.
+
+## Laravel configuration
 
 The backend is a Laravel modular monolith using Stripe Checkout in test mode. With `STRIPE_SECRET` configured, checkout creation returns a Stripe-hosted Checkout URL and the browser redirects there. Configure the Stripe CLI to forward events to `/api/webhooks/stripe`:
 

@@ -9,4 +9,5 @@ Route::get('checkout/sessions/{sessionId}', [PaymentController::class, 'checkout
 Route::get('webhook-events', [WebhookEventController::class, 'index']);
 Route::post('payments/checkout', [PaymentController::class, 'createCheckout']);
 Route::post('payments/{payment}/retry-webhook', [PaymentController::class, 'retryWebhook']);
+Route::post('payments/{payment}/refund', [PaymentController::class, 'refund']);
 Route::post('webhooks/stripe', [StripeWebhookController::class, 'handle']);
