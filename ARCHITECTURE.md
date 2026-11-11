@@ -1,43 +1,53 @@
 # Architecture
 
-## Current vertical slice
+## Runtime boundaries
 
-The first slice is a Vite + React client with deterministic local demo data. It keeps the reviewable UI and payment state model usable before Stripe credentials or a database are configured.
+React/Vite provides the operations dashboard and Checkout return page. Laravel is a modular monolith with a database catalog, Checkout service, verified-event processor, test refund service, and Sanctum administration. SQLite is supported for local development; the Render deployment uses PostgreSQL. Stripe hosts Checkout and delivers signed test events.
 
-## Target backend boundary
+The current data model contains products, payments, webhook events, users, and access tokens. A payment owns its customer/product/price snapshot; there is no separate order domain. Secret keys remain server-side. The browser sends a product ID and customer identity, and Laravel resolves pricing from the database.
 
-Laravel modular monolith:
+```mermaid
+flowchart LR
+  UI[React dashboard] -->|product ID + customer + idempotency key| API[Laravel Checkout service]
+  API -->|reserve snapshot and claim| DB[(SQLite or PostgreSQL)]
+  API -->|stable key and parameters| Stripe[Stripe test Checkout]
+  Stripe -->|return URL| UI
+  Stripe -->|signed events| Processor[Webhook processor]
+  Processor -->|lock, deduplicate, apply state| DB
+  UI -->|admin bearer token| Admin[Payment and event APIs]
+  Admin --> DB
+```
 
-- `Payment` domain owns products, orders, payment intents, and lifecycle transitions.
-- `Webhook` domain verifies `Stripe-Signature`, deduplicates by Stripe event ID, and applies state transitions inside a database transaction.
-- REST endpoints expose checkout creation, payment history, webhook health, and retry operations.
-- MySQL stores orders, payment attempts, webhook events, and audit records.
-- Stripe Checkout is an external dependency; secret keys are server-side only and webhook events are verified before state changes.
+## Checkout consistency
 
-## State model
+`CheckoutService` separates durable reservation, a short processing claim, the external call, and final persistence. A unique client key identifies the payment; its SHA-256 fingerprint binds the original product, customer, and demo/Stripe mode. Immutable Stripe parameters preserve the price and return URLs when catalog/configuration changes during recovery.
 
-`created → processing → succeeded | failed`; confirmed success can recover `failed`, and a verified full refund can move a payment to `refunded` even when its success event arrives later. `succeeded` never regresses to `processing` or `failed`; `refunded` is terminal. Repeated confirmations preserve the first recorded payment/refund timestamps. A completed Checkout Session remains `processing` unless its payment status is `paid` or `no_payment_required`.
+Claims expire after two minutes. A duplicate active request returns retryable 409 rather than waiting behind an external call. A crashed worker can recover with the same Stripe key; successful remote creation followed by local-save failure does not require a new payment. Finalization checks claim ownership and preserves a webhook-confirmed terminal state. Pending recovery stops after 23 hours to stay within Stripe's minimum key-retention window. Legacy rows without fingerprints reject replay.
 
-Webhook event delivery is independent: `received → processed | ignored | failed`. Unsupported events and transitions that would regress payment state are acknowledged as `ignored`. An unmatched supported event is retained as `failed` and returns HTTP 500 so Stripe can redeliver it after the payment is persisted.
+PostgreSQL integration workers synchronize before INSERT to exercise the unique-key race and savepoint recovery. A separate overlap scenario holds the gateway open while another request checks the claim. The gateway is fake; the transactions, row locks, and independent database connections are real.
 
-## Consistency and reliability
+## Payment and event state
 
-The database is the source of truth after a verified webhook. Checkout Session creation accepts an idempotency key with a unique constraint and redirects to Stripe-hosted test checkout. Webhook processing locks both event and payment rows. Already processed/ignored event IDs are acknowledged without reapplying changes.
+Payment transitions are `created → processing → succeeded | failed`. Confirmed success can recover a failed payment. Verified full-refund events can move it to `refunded`, even before success arrives. Succeeded payments never regress to processing/failed; refunded is terminal. Repeated confirmations preserve original payment/refund timestamps. A completed Checkout Session remains processing until payment status is paid or no_payment_required.
 
-`POST /api/payments/{payment}/retry-webhook` selects the oldest received/failed verified event associated with that payment or its Stripe identifiers, then runs the same processor against the stored field snapshot. One call retries one event. Each processing attempt increments the event's audit counter; a failure is retained even if the payment update transaction rolls back. A missing retryable event returns HTTP 422; processing failure returns HTTP 503. Manual retries do not manufacture payment success, and the frontend shows API errors without simulating a successful retry. Stripe controls automatic redelivery/backoff; no application retry scheduler is implemented.
+Webhook delivery state is independent: `received → processed | ignored | failed`. Signatures are verified before any event is stored. The processor locks event/payment rows and deduplicates event IDs. Every processing attempt increments the delivery counter. Unsupported events and regressive transitions are ignored; unmatched supported events remain failed and return 500 for Stripe redelivery.
 
-## Initial workload assumptions
+Payment-level manual retry selects the oldest associated received/failed verified event and replays its stored snapshot. One request processes one event. No stored event returns 422; a processing failure returns 503. Stripe controls automatic redelivery; there is no application retry scheduler.
 
-Personal portfolio demo, low traffic, one region, low data volume, seconds-level latency acceptable. A relational database is sufficient; no cache, queue cluster, or service split is justified yet.
+## Browser behavior
 
-## Security decisions
+`VITE_USE_API=false` selects explicit local simulation. In API mode there is no sample catalog substitution after a connection error and no fabricated successful checkout. Pending Checkout keys persist per product in sessionStorage; authentication tokens stay in memory.
 
-Administrative payment reads, event logs, refunds, and manual retries require Sanctum bearer authentication, the persisted `admin` user role, and an `admin` token ability. Tokens expire after one hour, are stored as hashes in the database, and are revoked on logout. The browser keeps the token in memory and discards private data on logout or a 401 response; late requests from an ended session cannot restore private records. Login is rate limited by email/IP and by IP. Administrators are provisioned through a private CLI prompt or optional server-only first-deployment bootstrap; there is no public registration endpoint. Product lookup, customer checkout, and session results are public, while incoming webhooks require Stripe's signature.
+Private records load only after administrator sign in, in pages of up to 100. Search, filters, and metrics apply to loaded records. Monetary totals are grouped by currency. Refresh resets lists to the first page. Late responses from an ended admin session cannot restore private data; detail requests also track selection order.
 
-Use test keys only, validate all input, verify webhook signatures, never log secrets or full card data, and keep Stripe secret keys out of the browser. Production deployment would require HTTPS, rate limiting, secret management, and backups.
+Checkout returns show pending, successful, failed, refunded, cancelled, and unavailable states. Returning through the success URL alone does not establish payment success. Session refresh does not mutate the webhook-backed payment state.
 
-## Checkout reservation and recovery
+## Security and deployment
 
-`CheckoutService` separates durable reservation, a short processing claim, the external Stripe call, and final persistence. The unique client key identifies a payment; a request fingerprint binds it to the original product, customer, and mode. Frozen Stripe parameters prevent catalog or redirect configuration changes from invalidating Stripe's idempotency contract during recovery. No database transaction spans a network call.
+Administrative APIs require a persisted admin role and Sanctum token with the admin ability. Tokens expire after one hour and are revoked on logout. The UI clears records on 401/403 or expiry. Login is rate limited. Administrators are provisioned privately via CLI or optional first-deployment seeding; there is no public registration/default password.
 
-Claims expire after two minutes so a crashed worker can be recovered. Retry uses the original Stripe key even when remote success was followed by local failure. Final persistence checks claim ownership and preserves webhook-confirmed payment state. Recovery stops after 23 hours to stay inside Stripe's minimum key-retention window. This protocol is covered by fault-injection feature tests and production-image PostgreSQL concurrency checks in CI.
+Vercel serves the frontend. Render builds the production PHP image, injects database credentials, and migrates/seeds at startup. PostgreSQL remains private to the API. HTTPS, narrow CORS, environment secrets, backups, and appropriate hosting plans are necessary for any long-lived deployment.
+
+## Scope and trade-offs
+
+This is a low-traffic, single-region portfolio demo. A relational database and synchronous Checkout request are sufficient; the design does not introduce queues, replicas, or service splits. Bounded network calls and durable recovery improve correctness without holding database locks during Stripe requests. Global analytics, live payments, partial refunds, subscriptions, background reconciliation, and formal compliance certification are outside the current scope.

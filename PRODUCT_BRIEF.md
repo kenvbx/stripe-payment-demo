@@ -1,43 +1,24 @@
-# Stripe Payment Demo — Product Brief
+# Stripe Payment Demo — Product brief
 
-## Purpose
+## Purpose and audience
 
-A personal/demo payment operations console that shows a complete Stripe test-mode lifecycle: create a checkout, track a PaymentIntent, receive a signed webhook, handle duplicate delivery safely, and expose recovery for failed events.
+A personal portfolio payment workspace for a developer or reviewer to inspect a Stripe test-mode lifecycle: database product → durable Checkout Session → signed webhook → payment state → test refund. The repository supplies reproducible setup and evidence without claiming real customer payments or production readiness.
 
-## Target user
+## Delivered scope
 
-A developer or reviewer who needs a compact, inspectable example of reliable payment integration without real money or production claims.
+- React/Vite interface with explicit local simulation and API modes.
+- Laravel catalog, Checkout creation/recovery, result summaries, payment details, stored webhook history/replay, and full test refunds.
+- Private administrator provisioning, Sanctum sign in/out, and role/ability checks.
+- PostgreSQL demo deployment and SQLite local development.
+- Responsive navigation, loading/error/empty states, loaded-record summaries, pagination, event search/filter, API request copy, and read-only environment information.
+- Automated browser, feature, and PostgreSQL concurrency checks, with documented manual Stripe test-mode verification.
 
 ## Success criteria
 
-- A reviewer can create a test checkout in under one minute.
-- Every payment shows an explicit lifecycle state and webhook state.
-- Failed/pending webhook events have a visible retry path.
-- The repository contains reproducible setup, safe environment documentation, and meaningful tests for state transitions.
+A reviewer can start the UI without Stripe credentials, connect the API using the documented setup, understand each payment/event state, recover retryable failures without creating duplicate payments, and trace the evidence behind each claim. The interface distinguishes sample data, pending confirmation, and webhook-confirmed outcomes.
 
-## Scope
+## Constraints and limits
 
-### MVP
+All payments are test mode. Credentials remain on the server. API mode displays real errors instead of substituting sample catalog prices or simulating payment success. Metrics cover loaded records and preserve currency boundaries. There are no live-mode charges, partial refunds, subscriptions, background retry scheduler, global analytics service, or compliance claims. Deployment recipes do not assert an available public environment.
 
-- Demo products and checkout creation.
-- Payment transaction history with search and status filters.
-- Webhook delivery log with signature/idempotency explanation.
-- API explorer showing server-side PaymentIntent request.
-- Responsive UI and safe test-card guidance.
-
-### Follow-up
-
-- Live Stripe Checkout Session creation from Laravel.
-- Stripe CLI local webhook forwarding.
-- Persistent MySQL transaction/event tables and PHPUnit integration tests.
-- Authenticated admin area and audit export.
-
-### Out of scope
-
-- Live mode charges, real card data, payout/reconciliation, subscriptions, and production compliance claims.
-
-## Constraints and assumptions
-
-- This is a personal/demo project.
-- Stripe test mode only; all credentials stay in environment variables.
-- The first vertical slice is intentionally runnable without Stripe credentials using local simulation data.
+See [REQUIREMENTS.md](./REQUIREMENTS.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for acceptance criteria, technical decisions, and evidence.

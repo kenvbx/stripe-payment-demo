@@ -6,8 +6,8 @@ export default defineConfig({
   reporter: 'list',
   use: { trace: 'retain-on-failure', ...devices['Desktop Chrome'] },
   projects: [
-    { name: 'demo', testMatch: 'catalog-checkout.spec.js', use: { baseURL: 'http://127.0.0.1:4173' } },
-    { name: 'admin', testMatch: ['admin-auth.spec.js', 'checkout-recovery.spec.js'], use: { baseURL: 'http://127.0.0.1:4174' } },
+    { name: 'demo', testMatch: ['catalog-checkout.spec.js', 'workspace.spec.js'], use: { baseURL: 'http://127.0.0.1:4173' } },
+    { name: 'admin', testMatch: ['admin-auth.spec.js', 'checkout-recovery.spec.js', 'api-workspace.spec.js'], use: { baseURL: 'http://127.0.0.1:4174' } },
   ],
   webServer: [
     {

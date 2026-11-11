@@ -4,7 +4,7 @@ This project has a reproducible demo deployment shape:
 
 - **Frontend:** Vercel, configured by [`vercel.json`](./vercel.json).
 - **Laravel API:** Render Docker web service backed by a managed PostgreSQL database, configured by [`render.yaml`](./render.yaml) and [`backend/Dockerfile`](./backend/Dockerfile).
-- **CI:** GitHub Actions builds the Vite frontend, runs PHPUnit and Playwright, and builds/starts the deployment image against PostgreSQL 16.
+- **CI:** GitHub Actions builds the Vite frontend, runs PHPUnit on SQLite/PostgreSQL 16 and Playwright, and builds/starts the deployment image against PostgreSQL 16.
 
 ## Deploy the frontend to Vercel
 
@@ -23,7 +23,7 @@ Create or update the Blueprint from this repository. Render provisions the `stri
 
 The Docker build installs production Composer dependencies without scripts or an autoloader first. After the Laravel sources and writable runtime directories are in place, it generates the optimized autoloader, runs package discovery, and checks PHP platform requirements. PostgreSQL and mbstring extensions are installed in the image. Local `.env` files, vendor dependencies, and compiled Laravel cache files are excluded from the build context. Database credentials and `APP_KEY` are supplied at runtime; migrations and seeding run when the container starts, not during image construction.
 
-The CI Docker job verifies a fresh image can migrate and seed PostgreSQL, return the three catalog products, reject anonymous admin access, authenticate the private test administrator, and revoke its token on logout. Its database and account credentials are disposable CI fixtures.
+The CI Docker job verifies a fresh image can migrate and seed PostgreSQL, return the three catalog products, reject anonymous admin access, authenticate the private test administrator, and revoke its token on logout. It also forces overlapping Checkout requests and simultaneous inserts from independent workers, verifying one payment and one fake gateway call. Its database and account credentials are disposable CI fixtures.
 
 Set these values in the Render dashboard:
 

@@ -1,92 +1,95 @@
 # Stripe Payment Demo
 
-Personal/demo project showing a Stripe test-mode payment flow with checkout creation, transaction history, webhook states, idempotency, recovery paths, and full refunds in Stripe test mode. It is not a production payment system and makes no live-payment claims.
+[![CI](https://github.com/kenvbx/stripe-payment-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/kenvbx/stripe-payment-demo/actions/workflows/ci.yml)
 
-## Run the frontend demo
+A personal portfolio project demonstrating Stripe Checkout in test mode with a React/Vite operations dashboard, Laravel API, and PostgreSQL deployment. It includes a database product catalog, durable checkout recovery, signed webhooks, administrator access, and full test refunds.
 
-```bash
-npm install
+![Payment workspace in local simulation mode](./docs/dashboard-overview.png)
+
+## Start with the UI demo
+
+Requires Node.js 22+ and npm.
+
+```sh
+npm ci
+cp .env.example .env
 npm run dev
 ```
 
-Then open the Vite URL shown in the terminal. The UI connects to the Laravel API when it is available. If the API is offline, it falls back to local demo data so the interface remains reviewable.
+The example sets `VITE_USE_API=false` for a standalone simulation with sample records. Open the Vite URL shown in the terminal. Checkout creates local sample payments; refunds and verified webhook retries require the API.
 
-## Run with Laravel API
+## Run the Laravel API
 
-```bash
+Requires PHP 8.3+, Composer, and PHP curl, mbstring, and SQLite extensions. From the repository root:
+
+```sh
 cd backend
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
 php artisan migrate
 php artisan db:seed
-php artisan serve --port=8000
+php artisan admin:create admin@example.com
+php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-In a separate terminal, start the frontend with `VITE_USE_API=true` (the default). Vite proxies `/api` to `http://127.0.0.1:8000`. For a separately hosted API, set `VITE_API_URL` to its `/api` URL.
+The admin command privately prompts for a password of at least 12 characters. No default administrator exists. The backend example uses SQLite for local development and leaves Stripe credentials empty. An empty Stripe secret enables the backend's explicit demo checkout mode; it does not contact Stripe or produce signed events.
+
+In the root `.env`, set `VITE_USE_API=true` and restart Vite. Vite proxies `/api` to `http://127.0.0.1:8000`. For a separate API host, set `VITE_API_URL=https://YOUR-API-HOST/api`. The API-enabled interface shows connection errors and uses the database catalog; it never turns an API checkout failure into a local payment.
+
+## Connect Stripe test mode
+
+Set these values in **backend/.env**, then restart the API:
+
+```dotenv
+STRIPE_SECRET=sk_test_YOUR_TEST_SECRET
+STRIPE_WEBHOOK_SECRET=whsec_YOUR_LISTENER_SECRET
+STRIPE_CHECKOUT_SUCCESS_URL=http://localhost:5173/?checkout=success&session_id={CHECKOUT_SESSION_ID}
+STRIPE_CHECKOUT_CANCEL_URL=http://localhost:5173/?checkout=cancelled
+```
+
+Run `stripe listen --forward-to 127.0.0.1:8000/api/webhooks/stripe` and use its signing secret above. Select a product and choose **Create checkout**. Hosted Checkout accepts Stripe test card `4242 4242 4242 4242`, a future expiry, and any CVC. Live secret keys are rejected. Final state comes from verified events; the result page can refresh the session status.
+
+## Explore the workspace
+
+- **Overview:** counts and successful volume from loaded payment records, with each currency totaled separately.
+- **Payments:** search/filter, load additional pages, open details, inspect identifiers and event history, and request a full test refund after confirmation.
+- **Products:** the active database catalog in API mode or clearly separated sample products in simulation mode.
+- **Webhooks:** search/filter stored deliveries, inspect errors/attempts, and request payment-level replay of a stored event. Unmatched events need reconciliation before retry.
+- **API explorer:** copy a working Laravel Checkout request with the correct request body.
+- **Settings:** inspect read-only connection values and open deployment instructions.
+
+Sign in as an administrator to load private payment records and events. The one-hour Sanctum token stays in memory; reload requires another sign in. Sign out revokes the token, and 401/403 responses clear private records. Catalog and Checkout remain public.
+
+Records are loaded in pages of up to 100. **Load more** expands the local search/filter and overview totals; these are loaded-record summaries, not global analytics. Use **Refresh records** to fetch the first page again after a webhook or refund.
+
+## Recovery guarantees
+
+Checkout reserves a payment and immutable Stripe request parameters before the network call. Retries preserve the original payment, product price, and Stripe idempotency key after timeout or local persistence failure. A two-minute processing claim rejects overlapping requests; the external call runs outside database transactions with bounded timeouts.
+
+The browser keeps pending keys per product in `sessionStorage` across reloads and clears them only after a confirmed API response. Input conflicts return 409. Unfinished attempts older than 23 hours require reconciliation because Stripe may discard keys after 24 hours. Retry never manufactures a successful payment.
 
 ## Verify
 
-```bash
+```sh
 npm run build
+npx playwright install chromium
+npm run test:e2e
+cd backend
+php artisan test --no-coverage
 ```
 
-`npm run build` builds the frontend. Run the Laravel feature suite with `cd backend && php artisan test`.
-Run the browser end-to-end checks with `npx playwright install chromium && npm run test:e2e`.
+CI runs the Laravel feature suite on SQLite and PostgreSQL 16, browser tests in explicit simulation/API configurations, and a production-image PostgreSQL integration test using independent workers. The concurrency test forces simultaneous inserts and overlapping requests, verifies one payment/gateway call, and checks stable replay. Stripe transports and browser API responses are mocked in automated checks; this is not evidence of a live Stripe transaction.
 
-## Product catalog
+## Documentation
 
-The Laravel database is the source of truth for the catalog. Seed the three sample products with `php artisan db:seed` and read active products from `GET /api/products`. Checkout requests send only `product_id` and customer details; the API reads the product name, amount in cents, and currency from the database. The frontend keeps its local sample catalog only as an offline fallback.
+- [API contract](./docs/API.md): routes, authentication, examples, and errors.
+- [Operations runbook](./docs/RUNBOOK.md): Checkout recovery, webhook reconciliation, refunds, and troubleshooting.
+- [Architecture](./ARCHITECTURE.md): boundaries, state machines, and consistency decisions.
+- [Acceptance criteria](./REQUIREMENTS.md): supported behavior and scope.
+- [Deployment](./DEPLOYMENT.md): Vercel frontend and Render/PostgreSQL Blueprint.
+- [Backend and PostgreSQL test setup](./backend/README.md#postgresql-integration-tests).
+- [Portfolio evidence](./docs/PORTFOLIO.md): walkthrough, screenshots, and test map.
 
-## Administrator access
-
-After installing dependencies and running migrations, create an administrator from the backend:
-
-```bash
-php artisan admin:create admin@example.com
-```
-
-The command prompts privately for a password of at least 12 characters and its confirmation. Open **Admin sign in** in the dashboard to authenticate. There is no public registration endpoint or default admin password.
-
-Login issues a Sanctum bearer token with the `admin` ability and a one-hour lifetime. The browser holds it only in memory; reloading the page requires signing in again. Sign out revokes the current token and clears private records. Expired/revoked tokens return 401; a non-admin or token without the admin ability returns 403. Login is limited to five attempts per minute per email/IP and twenty per minute per IP.
-
-Payment history/detail, webhook logs, refund, retry, and admin account endpoints require authentication and the admin role/ability. Catalog, Checkout creation, and the session result endpoint remain public; the Stripe webhook endpoint requires its signature. For first deployment without shell access, see the private environment bootstrap in [DEPLOYMENT.md](./DEPLOYMENT.md).
-
-## Refund a test payment
-
-Open a succeeded payment in the detail view and choose **Refund test payment**. The Laravel API requires a Stripe test secret, only accepts succeeded payments, and uses an idempotency key for the refund request. Stripe confirmation updates the payment to `refunded`; `charge.refunded` and `refund.updated` webhooks also synchronize refund state. Live Stripe keys are rejected by checkout and refund endpoints.
-
-## Webhook recovery
-
-Retry replays one received/failed event whose verified fields are already stored in the database. If no such event exists, the API returns 422; it never marks a payment successful just because retry was clicked. Unmatched supported events return 500 and remain retryable so Stripe can redeliver them. Late events cannot regress succeeded/refunded payments, and an unpaid completed Checkout Session waits for a confirmed success event.
-
-## Laravel configuration
-
-The backend is a Laravel modular monolith using Stripe Checkout in test mode. With `STRIPE_SECRET` configured, checkout creation returns a Stripe-hosted Checkout URL and the browser redirects there. Configure the Stripe CLI to forward events to `/api/webhooks/stripe`:
-
-```bash
-stripe listen --forward-to 127.0.0.1:8000/api/webhooks/stripe
-```
-
-Copy the CLI `whsec_...` value into `STRIPE_WEBHOOK_SECRET`. Keep `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, and database credentials in `.env`; never commit them. The API explorer in the demo shows the server-side PaymentIntent request and its `Idempotency-Key`.
-
-Use Stripe's test card `4242 4242 4242 4242` only in Stripe test mode, with any future expiry and any CVC. Do not enter real card data.
-
-## Portfolio evidence
-
-See [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for a reviewer walkthrough, architecture flow, evidence map, dashboard screenshot, and payment detail view.
-
-![Payment operations dashboard](./docs/dashboard-overview.png)
-
-## Portfolio label
-
-`Personal Project` / `Demo Project`.
-
-## Checkout recovery
-
-The API reserves a durable payment before calling Stripe and freezes its product price, customer, and redirect parameters. Retries use the same payment and Stripe idempotency key, including after a network timeout or a failed local save. A two-minute database claim prevents overlapping requests from creating separate sessions; Stripe calls run outside database transactions with bounded timeouts and one network retry.
-
-Reusing a key with different input returns `409 IDEMPOTENCY_CONFLICT`. An active claim returns retryable `409 CHECKOUT_IN_PROGRESS` with `Retry-After: 5`. Temporary failures return `503`; invalid products/configuration return `422`. Unfinished attempts older than 23 hours require administrator review because Stripe may discard keys after 24 hours. Expired sessions require a new checkout. Legacy payments without a request fingerprint reject replay safely.
-
-In API mode the browser retains a pending key per product in `sessionStorage` through failures and reloads, clears it after confirmed success, and shows errors without creating a local payment. Local simulation is available with `VITE_USE_API=false`; an API without a Stripe secret explicitly returns `checkout_mode: demo`.
-
-`CheckoutRecoveryTest` covers recovery, conflicts, immutable parameters, webhook status preservation, and the Stripe SDK request contract with a fake HTTP client. Playwright covers failed requests, reload recovery, and duplicate submissions. The Docker CI job also runs overlapping checkout workers against PostgreSQL; these checks do not contact Stripe.
-
-The backend CI matrix runs the full feature suite on SQLite and PostgreSQL 16. The deployment-image integration test additionally forces simultaneous inserts from independent PHP processes, rejects in-flight input conflicts, and verifies one payment/session call with stable replay. See [PostgreSQL test setup](./backend/README.md#postgresql-integration-tests) to run it locally.
+This is a **Personal Project / Demo Project**. Deployment configuration is provided; no live URL, production revenue, compliance certification, or real customer volume is claimed.
