@@ -130,6 +130,7 @@ class AdminAuthTest extends TestCase
 
     public function test_customer_routes_and_signature_validation_remain_public(): void
     {
+        config(['services.stripe.webhook_secret' => 'whsec_public_route_fixture']);
         $this->getJson('/api/products')->assertOk();
         $this->postJson('/api/payments/checkout')->assertUnprocessable();
         $this->getJson('/api/checkout/sessions/cs_unknown')->assertNotFound();

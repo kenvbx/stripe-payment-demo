@@ -14,7 +14,7 @@ For conflicts, expired sessions, or the 23-hour recovery cutoff, an administrato
 
 ## Webhook is pending or failed
 
-1. Forward Stripe test events locally, or confirm the hosted test endpoint and signing secret.
+1. Forward Stripe test events locally, or confirm the hosted test endpoint and signing secret. If the endpoint returns 503 with `Webhook endpoint is not configured.`, set a nonempty `STRIPE_WEBHOOK_SECRET` on the API and restart it (clear/rebuild Laravel configuration cache if used). Requests are rejected without storing events or changing payments until the secret is configured; Stripe can then redeliver.
 2. Sign in and open **Webhooks**. Search the event ID; filter received/failed events and inspect their error and attempt counter.
 3. Ensure the payment exists and its Stripe identifiers/metadata match. An unmatched event needs reconciliation; Stripe redelivery can resolve it after the matching payment is available.
 4. Use **Retry payment** or the payment detail retry action. The backend selects the oldest associated received/failed event. No stored event returns 422; retry does not turn an unpaid payment into success.

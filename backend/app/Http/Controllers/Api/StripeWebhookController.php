@@ -13,9 +13,15 @@ class StripeWebhookController extends Controller
 {
     public function handle(Request $request, StripeWebhookProcessor $processor): Response
     {
+        $secret = config('services.stripe.webhook_secret');
+        if (!is_string($secret) || trim($secret) === '') {
+            return response('Webhook endpoint is not configured.', 503)
+                ->header('Cache-Control', 'no-store');
+        }
+
         $payload = $request->getContent();
         try {
-            $event = Webhook::constructEvent($payload, (string) $request->header('Stripe-Signature'), (string) config('services.stripe.webhook_secret'));
+            $event = Webhook::constructEvent($payload, (string) $request->header('Stripe-Signature'), $secret);
         } catch (UnexpectedValueException|\Stripe\Exception\SignatureVerificationException) {
             return response('Invalid webhook signature.', 400);
         }

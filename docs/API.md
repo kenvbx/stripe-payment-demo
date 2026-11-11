@@ -54,6 +54,6 @@ Service errors include `message`, `error_code`, and `retryable`. Retryable servi
 
 Subscribe to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `payment_intent.succeeded`, `payment_intent.processing`, `payment_intent.payment_failed`, `charge.refunded`, and `refund.updated`.
 
-An invalid signature returns 400. Unsupported/regressive events are acknowledged as ignored. Supported unmatched events return 500 and remain eligible for redelivery. Manual payment retry requires a stored event; it returns 422 when none exists and 503 if processing fails. The operation retries one event, not an arbitrarily selected event row.
+A missing, empty, or whitespace-only webhook signing secret disables processing and returns 503 with no event/payment writes. Stripe can retry after the server configuration is corrected. With a configured secret, an invalid signature returns 400. Unsupported/regressive events are acknowledged as ignored. Supported unmatched events return 500 and remain eligible for redelivery. Manual payment retry requires a stored event; it returns 422 when none exists and 503 if processing fails. The operation retries one event, not an arbitrarily selected event row.
 
 Refund eligibility comes from the detail endpoint's `refund_available`. Confirm the full amount/currency before POST. Inspect `refund_status` and verified events after submission; never infer payment/refund success from a UI action alone.
