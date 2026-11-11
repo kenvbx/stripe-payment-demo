@@ -2,6 +2,8 @@
 .env.*
 !.env.example
 vendor
+bootstrap/cache/*.php
+.phpunit.result.cache
 storage/logs/*
 storage/framework/cache/data/*
 storage/framework/sessions/*

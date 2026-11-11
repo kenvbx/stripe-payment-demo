@@ -35,3 +35,56 @@ jobs:
       - run: cp .env.example .env
       - run: php artisan key:generate
       - run: php artisan test --no-coverage
+
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: stripe_demo_ci
+          POSTGRES_USER: stripe_demo_ci
+          POSTGRES_PASSWORD: ci-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stripe_demo_ci -d stripe_demo_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build deployment image
+        run: docker build --pull --tag stripe-payment-demo:ci backend
+      - name: Start API with PostgreSQL
+        run: |
+          task_app_key=$(docker run --rm stripe-payment-demo:ci php artisan key:generate --show)
+          docker run --detach --name stripe-payment-demo-ci --network host \
+            --env APP_KEY="$task_app_key" \
+            --env DB_HOST=127.0.0.1 --env DB_PORT=5432 \
+            --env DB_DATABASE=stripe_demo_ci --env DB_USERNAME=stripe_demo_ci \
+            --env DB_PASSWORD=ci-postgres-password \
+            --env ADMIN_EMAIL=ci-admin@example.com --env ADMIN_PASSWORD=ci-smoke-password \
+            stripe-payment-demo:ci
+      - name: Verify migration, catalog, and protected administration
+        run: |
+          curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 \
+            http://127.0.0.1:10000/api/products \
+            | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; assert len(data)==3, data; assert data[0]["name"]=="Starter plan", data'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:10000/api/payments)" = 401
+          task_token=$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"ci-admin@example.com","password":"ci-smoke-password"}' \
+            http://127.0.0.1:10000/api/admin/login \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          curl --fail --silent --show-error --output /dev/null \
+            --header "Authorization: Bearer $task_token" http://127.0.0.1:10000/api/payments
+          curl --fail --silent --show-error --output /dev/null --request POST \
+            --header "Authorization: Bearer $task_token" http://127.0.0.1:10000/api/admin/logout
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Authorization: Bearer $task_token" http://127.0.0.1:10000/api/payments)" = 401
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs stripe-payment-demo-ci || true
+      - name: Remove test container
+        if: always()
+        run: docker rm --force stripe-payment-demo-ci || true
