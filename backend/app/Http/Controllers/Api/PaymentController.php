@@ -4,12 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
-use App\Models\Product;
+use App\Exceptions\CheckoutException;
+use App\Services\CheckoutService;
 use App\Services\StripeRefundService;
 use App\Services\StripeWebhookProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Stripe\StripeClient;
 
 class PaymentController extends Controller
@@ -55,64 +55,28 @@ class PaymentController extends Controller
         ]]);
     }
 
-    public function createCheckout(Request $request): JsonResponse
+    public function createCheckout(Request $request, CheckoutService $checkout): JsonResponse
     {
         $data = $request->validate([
-            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'product_id' => ['required', 'integer', 'min:1'],
             'customer_name' => ['required', 'string', 'max:120'],
-            'customer_email' => ['required', 'email'],
-            'idempotency_key' => ['required', 'string', 'max:120'],
+            'customer_email' => ['required', 'email', 'max:255'],
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:120'],
         ]);
-        if ($existing = Payment::where('idempotency_key', $data['idempotency_key'])->first()) {
-            return response()->json(['data' => $existing, 'checkout_url' => $existing->checkout_url, 'idempotent_replay' => true]);
+        try {
+            $result = $checkout->create($data);
+        } catch (CheckoutException $exception) {
+            $response = response()->json([
+                'message' => $exception->getMessage(), 'error_code' => $exception->errorCode, 'retryable' => $exception->retryable,
+            ], $exception->httpStatus)->header('Cache-Control', 'no-store');
+            return $exception->retryable ? $response->header('Retry-After', '5') : $response;
         }
-        $product = Product::query()->whereKey($data['product_id'])->where('is_active', true)->firstOrFail();
-
-        $stripeSecret = (string) config('services.stripe.secret');
-        if ($stripeSecret !== '' && !str_starts_with($stripeSecret, 'sk_test_') && !str_starts_with($stripeSecret, 'rk_test_')) {
-            return response()->json(['message' => 'This demo accepts Stripe test keys only.'], 422);
-        }
-
-        $payment = DB::transaction(function () use ($data, $product): Payment {
-            $payment = Payment::create([
-                'product_name' => $product->name, 'amount' => $product->price_cents, 'currency' => $product->currency,
-                'customer_name' => $data['customer_name'], 'customer_email' => $data['customer_email'],
-                'idempotency_key' => $data['idempotency_key'], 'status' => 'created', 'webhook_status' => 'pending',
-            ]);
-            $stripeSecret = config('services.stripe.secret');
-
-            if ($stripeSecret) {
-                $stripe = new StripeClient($stripeSecret);
-                $session = $stripe->checkout->sessions->create([
-                    'mode' => 'payment',
-                    'customer_email' => $payment->customer_email,
-                    'line_items' => [[
-                        'price_data' => [
-                            'currency' => $product->currency,
-                            'product_data' => ['name' => $product->name],
-                            'unit_amount' => $payment->amount,
-                        ],
-                        'quantity' => 1,
-                    ]],
-                    'metadata' => ['payment_id' => (string) $payment->id],
-                    'success_url' => config('services.stripe.success_url'),
-                    'cancel_url' => config('services.stripe.cancel_url'),
-                ], ['idempotency_key' => $payment->idempotency_key]);
-
-                $payment->update([
-                    'stripe_checkout_session_id' => $session->id,
-                    'stripe_payment_intent_id' => is_string($session->payment_intent) ? $session->payment_intent : null,
-                    'checkout_url' => $session->url,
-                    'status' => 'processing',
-                ]);
-            } else {
-                $payment->update(['stripe_payment_intent_id' => 'pi_demo_'.$payment->id, 'status' => 'processing']);
-            }
-
-            return $payment->fresh();
-        });
-
-        return response()->json(['data' => $payment, 'checkout_url' => $payment->checkout_url], 201);
+        $payment = $result['payment'];
+        return response()->json([
+            'data' => $payment,
+            'checkout_url' => in_array($payment->status, ['succeeded', 'refunded'], true) ? null : $payment->checkout_url,
+            'checkout_mode' => $result['mode'], 'idempotent_replay' => $result['replay'],
+        ], $result['replay'] ? 200 : 201)->header('Cache-Control', 'no-store');
     }
 
     public function refund(Payment $payment, StripeRefundService $refundService): JsonResponse

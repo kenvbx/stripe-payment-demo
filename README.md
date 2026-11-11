@@ -78,3 +78,13 @@ See [docs/PORTFOLIO.md](./docs/PORTFOLIO.md) for a reviewer walkthrough, archite
 ## Portfolio label
 
 `Personal Project` / `Demo Project`.
+
+## Checkout recovery
+
+The API reserves a durable payment before calling Stripe and freezes its product price, customer, and redirect parameters. Retries use the same payment and Stripe idempotency key, including after a network timeout or a failed local save. A two-minute database claim prevents overlapping requests from creating separate sessions; Stripe calls run outside database transactions with bounded timeouts and one network retry.
+
+Reusing a key with different input returns `409 IDEMPOTENCY_CONFLICT`. An active claim returns retryable `409 CHECKOUT_IN_PROGRESS` with `Retry-After: 5`. Temporary failures return `503`; invalid products/configuration return `422`. Unfinished attempts older than 23 hours require administrator review because Stripe may discard keys after 24 hours. Expired sessions require a new checkout. Legacy payments without a request fingerprint reject replay safely.
+
+In API mode the browser retains a pending key per product in `sessionStorage` through failures and reloads, clears it after confirmed success, and shows errors without creating a local payment. Local simulation is available with `VITE_USE_API=false`; an API without a Stripe secret explicitly returns `checkout_mode: demo`.
+
+`CheckoutRecoveryTest` covers recovery, conflicts, immutable parameters, webhook status preservation, and the Stripe SDK request contract with a fake HTTP client. Playwright covers failed requests, reload recovery, and duplicate submissions. The Docker CI job also runs overlapping checkout workers against PostgreSQL; these checks do not contact Stripe.

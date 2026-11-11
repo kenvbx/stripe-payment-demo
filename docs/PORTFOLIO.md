@@ -43,7 +43,9 @@ The detail view shows payment identifiers, customer and product information, web
 | Signature verification | `backend/app/Http/Controllers/Api/StripeWebhookController.php` |
 | Duplicate event protection and delivery attempts | `backend/app/Services/StripeWebhookProcessor.php` and `backend/tests/Feature/PaymentApiTest.php` |
 | Persistent webhook event log | `backend/app/Models/WebhookEvent.php`, its migration, and `GET /api/webhook-events` |
-| Idempotent checkout creation | `backend/tests/Feature/PaymentApiTest.php` |
+| Checkout recovery and idempotency | `backend/tests/Feature/CheckoutRecoveryTest.php`: timeout/local-save recovery, immutable Stripe parameters, input conflicts, expired claims, safe retry window, and SDK request contract. |
+| Concurrent checkout on PostgreSQL | `backend/tests/Integration/checkout-concurrency.php` runs independent workers inside the deployment image in CI with a fake gateway. |
+| Browser checkout failures | `e2e/checkout-recovery.spec.js`: pending-state controls, error display, and same-key recovery across reload. |
 | Retry and failure recovery | `backend/app/Http/Controllers/Api/PaymentController.php` |
 | Responsive interface | `src/main.jsx` and `src/styles.css` |
 | Reproducible deployment | `DEPLOYMENT.md`, `render.yaml`, `backend/Dockerfile`, `vercel.json` |
