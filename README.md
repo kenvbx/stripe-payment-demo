@@ -29,6 +29,7 @@ npm run build
 ```
 
 `npm run build` builds the frontend. Run the Laravel feature suite with `cd backend && php artisan test`.
+Run the browser end-to-end checks with `npx playwright install chromium && npm run test:e2e`.
 
 ## Product catalog
 
