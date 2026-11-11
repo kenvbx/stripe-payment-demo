@@ -16,9 +16,11 @@ services:
       - key: LOG_CHANNEL
         value: stderr
       - key: DB_CONNECTION
-        value: sqlite
-      - key: DB_DATABASE
-        value: /var/www/html/database/database.sqlite
+        value: pgsql
+      - key: DB_URL
+        fromDatabase:
+          name: stripe-payment-demo-db
+          property: connectionString
       - key: FRONTEND_URL
         sync: false
       - key: STRIPE_KEY
@@ -31,3 +33,9 @@ services:
         sync: false
       - key: STRIPE_CHECKOUT_CANCEL_URL
         sync: false
+
+databases:
+  - name: stripe-payment-demo-db
+    databaseName: stripe_payment_demo
+    user: stripe_payment_demo
+    plan: free

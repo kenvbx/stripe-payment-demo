@@ -61,4 +61,4 @@ flowchart LR
 
 ## Honest scope
 
-This is a personal demo. It uses Stripe test mode only and does not claim production payment volume, real customer revenue, compliance certification, or live operational availability. The Render demo configuration uses SQLite with ephemeral storage; persistent deployment should use managed PostgreSQL.
+This is a personal demo. It uses Stripe test mode only and does not claim production payment volume, real customer revenue, compliance certification, or live operational availability. The Render Blueprint provisions managed PostgreSQL on its free evaluation plan; upgrade the database plan for long-term retention.

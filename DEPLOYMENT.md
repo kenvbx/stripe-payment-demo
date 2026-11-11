@@ -3,7 +3,7 @@
 This project has a reproducible demo deployment shape:
 
 - **Frontend:** Vercel, configured by [`vercel.json`](./vercel.json).
-- **Laravel API:** Render Docker web service, configured by [`render.yaml`](./render.yaml) and [`backend/Dockerfile`](./backend/Dockerfile).
+- **Laravel API:** Render Docker web service backed by a managed PostgreSQL database, configured by [`render.yaml`](./render.yaml) and [`backend/Dockerfile`](./backend/Dockerfile).
 - **CI:** GitHub Actions builds the Vite frontend and runs Laravel PHPUnit tests.
 
 ## Deploy the frontend to Vercel
@@ -19,7 +19,7 @@ Vercel will run `npm run build` and serve `dist/`.
 
 ## Deploy the API to Render
 
-Create a new Blueprint from this repository. Render reads `render.yaml`, builds `backend/Dockerfile`, runs migrations and idempotent product seeding on boot, and exposes the Laravel health response at `/`.
+Create or update the Blueprint from this repository. Render provisions the `stripe-payment-demo-db` PostgreSQL database, injects its internal connection string as `DB_URL`, builds `backend/Dockerfile` with `pdo_pgsql`, runs migrations and idempotent product seeding on boot, and exposes the Laravel health response at `/`.
 
 Set these values in the Render dashboard:
 
@@ -32,7 +32,7 @@ STRIPE_CHECKOUT_SUCCESS_URL=https://YOUR-VERCEL-PROJECT.vercel.app/?checkout=suc
 STRIPE_CHECKOUT_CANCEL_URL=https://YOUR-VERCEL-PROJECT.vercel.app/?checkout=cancelled
 ```
 
-The free demo uses SQLite inside the container. Render free instances have ephemeral storage, so use a managed PostgreSQL database and update `DB_CONNECTION`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` before treating the deployment as persistent.
+The Blueprint uses Render's free PostgreSQL plan to avoid requiring a paid service. Free PostgreSQL databases have a limited lifetime and are intended for evaluation; upgrade the database plan in Render before relying on long-term data retention. Keep the web service and database in the same Render region so the injected connection string uses the private network.
 
 ## Stripe webhook forwarding
 
