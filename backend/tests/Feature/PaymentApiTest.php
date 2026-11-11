@@ -15,7 +15,7 @@ class PaymentApiTest extends TestCase
     use RefreshDatabase;
     private string $webhookSecret = 'whsec_test_secret';
 
-    protected function setUp(): void { parent::setUp(); config(['services.stripe.webhook_secret' => $this->webhookSecret]); }
+    protected function setUp(): void { parent::setUp(); config(['services.stripe.secret' => null, 'services.stripe.webhook_secret' => $this->webhookSecret]); }
 
     public function test_checkout_is_idempotent(): void
     {
