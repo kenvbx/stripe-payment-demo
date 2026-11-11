@@ -21,6 +21,35 @@ class PaymentController extends Controller
         return response()->json(['data' => $payment->load(['webhookEvents' => fn ($query) => $query->latest('received_at')])]);
     }
 
+    public function checkoutSession(string $sessionId): JsonResponse
+    {
+        $payment = Payment::query()->where('stripe_checkout_session_id', $sessionId)->firstOrFail();
+        $sessionStatus = null;
+        $paymentStatus = null;
+
+        if (config('services.stripe.secret')) {
+            try {
+                $session = (new StripeClient(config('services.stripe.secret')))->checkout->sessions->retrieve($sessionId);
+                $sessionStatus = $session->status;
+                $paymentStatus = $session->payment_status;
+            } catch (\Throwable) {
+                // Keep the webhook-backed state available if Stripe's API cannot be reached.
+            }
+        }
+
+        return response()->json(['data' => [
+            'payment_id' => $payment->id,
+            'status' => $payment->status,
+            'webhook_status' => $payment->webhook_status,
+            'session_status' => $sessionStatus,
+            'payment_status' => $paymentStatus,
+            'confirmation_pending' => $payment->status === 'processing' || $payment->webhook_status !== 'processed',
+            'amount' => $payment->amount,
+            'currency' => $payment->currency,
+            'product_name' => $payment->product_name,
+        ]]);
+    }
+
     public function createCheckout(Request $request): JsonResponse
     {
         $data = $request->validate([

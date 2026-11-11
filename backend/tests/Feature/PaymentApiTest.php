@@ -21,6 +21,23 @@ class PaymentApiTest extends TestCase
         $this->assertSame($first->json('data.id'), $second->json('data.id')); $this->assertDatabaseCount('payments', 1);
     }
 
+    public function test_checkout_return_status_is_scoped_to_a_known_session(): void
+    {
+        config(['services.stripe.secret' => null]);
+        $payment = Payment::create($this->paymentAttributes([
+            'stripe_checkout_session_id' => 'cs_return_test',
+            'status' => 'processing',
+            'webhook_status' => 'pending',
+        ]));
+
+        $this->getJson('/api/checkout/sessions/cs_return_test')
+            ->assertOk()
+            ->assertJsonPath('data.payment_id', $payment->id)
+            ->assertJsonPath('data.confirmation_pending', true)
+            ->assertJsonPath('data.product_name', 'Pro workspace');
+        $this->getJson('/api/checkout/sessions/cs_unknown')->assertNotFound();
+    }
+
     public function test_checkout_completed_webhook_marks_payment_succeeded(): void
     {
         $payment = Payment::create($this->paymentAttributes(['stripe_checkout_session_id' => 'cs_test_123', 'status' => 'processing']));

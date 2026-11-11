@@ -30,6 +30,7 @@ The detail view shows payment identifiers, customer and product information, web
 | --- | --- |
 | Payment detail endpoint | `GET /api/payments/{id}` returns the transaction record for the detail page. |
 | Payment detail interface | `src/main.jsx` and `src/styles.css` |
+| Checkout result page | React handles Stripe success/cancel redirects and checks session status via `GET /api/checkout/sessions/{sessionId}`. |
 | Checkout creation | `backend/app/Http/Controllers/Api/PaymentController.php` |
 | Checkout Session persistence | `backend/database/migrations/2026_11_10_000002_add_checkout_fields_to_payments_table.php` |
 | Signature verification | `backend/app/Http/Controllers/Api/StripeWebhookController.php` |
