@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Services\StripeRefundService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,24 +57,27 @@ class PaymentController extends Controller
     public function createCheckout(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'product_name' => ['required', 'string', 'max:120'],
-            'amount' => ['required', 'integer', 'min:50'],
+            'product_id' => ['required', 'integer', 'exists:products,id'],
             'customer_name' => ['required', 'string', 'max:120'],
             'customer_email' => ['required', 'email'],
             'idempotency_key' => ['required', 'string', 'max:120'],
         ]);
-
         if ($existing = Payment::where('idempotency_key', $data['idempotency_key'])->first()) {
             return response()->json(['data' => $existing, 'checkout_url' => $existing->checkout_url, 'idempotent_replay' => true]);
         }
+        $product = Product::query()->whereKey($data['product_id'])->where('is_active', true)->firstOrFail();
 
         $stripeSecret = (string) config('services.stripe.secret');
         if ($stripeSecret !== '' && !str_starts_with($stripeSecret, 'sk_test_') && !str_starts_with($stripeSecret, 'rk_test_')) {
             return response()->json(['message' => 'This demo accepts Stripe test keys only.'], 422);
         }
 
-        $payment = DB::transaction(function () use ($data): Payment {
-            $payment = Payment::create($data + ['currency' => 'usd', 'status' => 'created', 'webhook_status' => 'pending']);
+        $payment = DB::transaction(function () use ($data, $product): Payment {
+            $payment = Payment::create([
+                'product_name' => $product->name, 'amount' => $product->price_cents, 'currency' => $product->currency,
+                'customer_name' => $data['customer_name'], 'customer_email' => $data['customer_email'],
+                'idempotency_key' => $data['idempotency_key'], 'status' => 'created', 'webhook_status' => 'pending',
+            ]);
             $stripeSecret = config('services.stripe.secret');
 
             if ($stripeSecret) {
@@ -83,8 +87,8 @@ class PaymentController extends Controller
                     'customer_email' => $payment->customer_email,
                     'line_items' => [[
                         'price_data' => [
-                            'currency' => $payment->currency,
-                            'product_data' => ['name' => $payment->product_name],
+                            'currency' => $product->currency,
+                            'product_data' => ['name' => $product->name],
                             'unit_amount' => $payment->amount,
                         ],
                         'quantity' => 1,

@@ -19,7 +19,7 @@ Vercel will run `npm run build` and serve `dist/`.
 
 ## Deploy the API to Render
 
-Create a new Blueprint from this repository. Render reads `render.yaml`, builds `backend/Dockerfile`, runs migrations on boot, and exposes the Laravel health response at `/`.
+Create a new Blueprint from this repository. Render reads `render.yaml`, builds `backend/Dockerfile`, runs migrations and idempotent product seeding on boot, and exposes the Laravel health response at `/`.
 
 Set these values in the Render dashboard:
 

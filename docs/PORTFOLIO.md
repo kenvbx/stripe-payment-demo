@@ -6,6 +6,8 @@
 
 This project demonstrates a test-mode payment flow with a React/Vite operations console and Laravel API. The implementation covers Stripe Checkout Session creation, server-side idempotency, signed webhook verification, duplicate-event handling, transaction state transitions, and retry recovery.
 
+The product catalog is stored in Laravel's database and seeded for the demo. Checkout accepts a product ID; the backend resolves the product's name, price, and currency so client supplied pricing cannot change the charge.
+
 ![Payment operations dashboard](./dashboard-overview.png)
 
 ### Payment detail
@@ -34,6 +36,7 @@ The detail view shows payment identifiers, customer and product information, web
 | Test-mode refunds | `backend/app/Services/StripeRefundService.php` and `POST /api/payments/{payment}/refund`; live keys are rejected. |
 | Refund webhook state | `charge.refunded` and `refund.updated` are handled by `backend/app/Services/StripeWebhookProcessor.php`. |
 | Checkout creation | `backend/app/Http/Controllers/Api/PaymentController.php` |
+| Database product catalog and endpoint | `backend/app/Models/Product.php`, `backend/database/seeders/ProductSeeder.php`, and `GET /api/products` |
 | Checkout Session persistence | `backend/database/migrations/2026_11_10_000002_add_checkout_fields_to_payments_table.php` |
 | Signature verification | `backend/app/Http/Controllers/Api/StripeWebhookController.php` |
 | Duplicate event protection and delivery attempts | `backend/app/Services/StripeWebhookProcessor.php` and `backend/tests/Feature/PaymentApiTest.php` |

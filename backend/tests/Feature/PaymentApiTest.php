@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Payment;
+use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 use App\Services\StripeRefundService;
@@ -18,10 +19,29 @@ class PaymentApiTest extends TestCase
 
     public function test_checkout_is_idempotent(): void
     {
-        $payload = ['product_name' => 'Pro workspace', 'amount' => 8900, 'customer_name' => 'Demo Customer', 'customer_email' => 'demo@example.com', 'idempotency_key' => 'checkout-test-1'];
+        $product = Product::create(['name' => 'Pro workspace', 'slug' => 'pro-workspace', 'description' => 'For growing teams', 'price_cents' => 8900, 'currency' => 'usd', 'is_active' => true]);
+        $payload = ['product_id' => $product->id, 'customer_name' => 'Demo Customer', 'customer_email' => 'demo@example.com', 'idempotency_key' => 'checkout-test-1'];
         $first = $this->postJson('/api/payments/checkout', $payload)->assertCreated();
         $second = $this->postJson('/api/payments/checkout', $payload)->assertOk()->assertJsonPath('idempotent_replay', true);
         $this->assertSame($first->json('data.id'), $second->json('data.id')); $this->assertDatabaseCount('payments', 1);
+    }
+
+    public function test_checkout_uses_database_product_instead_of_client_price_or_name(): void
+    {
+        $product = Product::create(['name' => 'Database Pro', 'slug' => 'database-pro', 'description' => 'Catalog source of truth', 'price_cents' => 12345, 'currency' => 'eur', 'is_active' => true]);
+
+        $this->postJson('/api/payments/checkout', [
+            'product_id' => $product->id, 'product_name' => 'Injected name', 'amount' => 1,
+            'customer_name' => 'Demo Customer', 'customer_email' => 'demo@example.com', 'idempotency_key' => 'catalog-price-test',
+        ])->assertCreated()->assertJsonPath('data.product_name', 'Database Pro')->assertJsonPath('data.amount', 12345)->assertJsonPath('data.currency', 'eur');
+    }
+
+    public function test_product_catalog_lists_only_active_products(): void
+    {
+        Product::create(['name' => 'Active', 'slug' => 'active', 'description' => 'Available', 'price_cents' => 1000, 'currency' => 'usd', 'is_active' => true]);
+        Product::create(['name' => 'Archived', 'slug' => 'archived', 'description' => 'Unavailable', 'price_cents' => 2000, 'currency' => 'usd', 'is_active' => false]);
+
+        $this->getJson('/api/products')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'Active')->assertJsonPath('data.0.price_cents', 1000);
     }
 
     public function test_checkout_return_status_is_scoped_to_a_known_session(): void

@@ -16,6 +16,7 @@ Then open the Vite URL shown in the terminal. The UI connects to the Laravel API
 ```bash
 cd backend
 php artisan migrate
+php artisan db:seed
 php artisan serve --port=8000
 ```
 
@@ -27,7 +28,11 @@ In a separate terminal, start the frontend with `VITE_USE_API=true` (the default
 npm run build
 ```
 
-The build is the current automated smoke check. Before a live Stripe integration, add PHPUnit/API tests for signature verification, duplicate events, idempotency, and payment state transitions.
+`npm run build` builds the frontend. Run the Laravel feature suite with `cd backend && php artisan test`.
+
+## Product catalog
+
+The Laravel database is the source of truth for the catalog. Seed the three sample products with `php artisan db:seed` and read active products from `GET /api/products`. Checkout requests send only `product_id` and customer details; the API reads the product name, amount in cents, and currency from the database. The frontend keeps its local sample catalog only as an offline fallback.
 
 ## Refund a test payment
 

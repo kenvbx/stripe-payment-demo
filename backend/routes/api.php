@@ -1,9 +1,11 @@
 <?php
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\StripeWebhookController;
 use App\Http\Controllers\Api\WebhookEventController;
 use Illuminate\Support\Facades\Route;
 Route::get('payments', [PaymentController::class, 'index']);
+Route::get('products', [ProductController::class, 'index']);
 Route::get('payments/{payment}', [PaymentController::class, 'show']);
 Route::get('checkout/sessions/{sessionId}', [PaymentController::class, 'checkoutSession']);
 Route::get('webhook-events', [WebhookEventController::class, 'index']);
