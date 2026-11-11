@@ -88,3 +88,5 @@ Reusing a key with different input returns `409 IDEMPOTENCY_CONFLICT`. An active
 In API mode the browser retains a pending key per product in `sessionStorage` through failures and reloads, clears it after confirmed success, and shows errors without creating a local payment. Local simulation is available with `VITE_USE_API=false`; an API without a Stripe secret explicitly returns `checkout_mode: demo`.
 
 `CheckoutRecoveryTest` covers recovery, conflicts, immutable parameters, webhook status preservation, and the Stripe SDK request contract with a fake HTTP client. Playwright covers failed requests, reload recovery, and duplicate submissions. The Docker CI job also runs overlapping checkout workers against PostgreSQL; these checks do not contact Stripe.
+
+The backend CI matrix runs the full feature suite on SQLite and PostgreSQL 16. The deployment-image integration test additionally forces simultaneous inserts from independent PHP processes, rejects in-flight input conflicts, and verifies one payment/session call with stable replay. See [PostgreSQL test setup](./backend/README.md#postgresql-integration-tests) to run it locally.

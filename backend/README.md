@@ -38,3 +38,29 @@ The webhook endpoint verifies `Stripe-Signature`, locks the payment row, ignores
 The recovery migration adds an immutable request snapshot and a two-minute processing claim. Apply migrations before deploying the updated API. Pending attempts older than 23 hours return `CHECKOUT_RETRY_EXPIRED` and need administrator reconciliation before another checkout is started. Legacy rows without a fingerprint return `IDEMPOTENCY_CONFLICT`.
 
 Feature tests use a fake Stripe gateway/HTTP transport. `tests/Integration/checkout-concurrency.php` runs two real PHP workers against the disposable `stripe_demo_ci` PostgreSQL database in Docker CI and verifies one payment, one gateway invocation, and stable replay.
+
+
+## PostgreSQL integration tests
+
+CI runs the complete feature suite on both SQLite and PostgreSQL 16. The PostgreSQL run covers API persistence, immutable checkout JSON snapshots, timeout and local-save recovery, processing-claim expiry, webhook state transitions/retries, refunds, and administrator access.
+
+To run locally, create a dedicated disposable database named `stripe_demo_test` (or `stripe_demo_test_<lowercase suffix>`). The feature suite rebuilds its schema. Set the connection variables in your shell before these commands; use the test database credentials for your local PostgreSQL installation:
+
+```sh
+export DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432
+export DB_DATABASE=stripe_demo_test DB_USERNAME=stripe_demo_test
+export DB_URL=''
+# Set DB_PASSWORD if your local server requires one.
+php artisan test --no-coverage
+php artisan db:seed --force
+php tests/Integration/checkout-concurrency.php
+```
+
+The standalone test also accepts Docker CI's `stripe_demo_ci` database. It uses independent PHP processes and explicit barriers to verify:
+
+- A duplicate request returns `CHECKOUT_IN_PROGRESS` while the owner waits for the gateway.
+- Conflicting customer input is rejected while the original request is active.
+- Two transactions which both observe a missing key race to insert: the unique constraint and savepoint recovery yield one payment and one gateway call.
+- Persisted parameters stay unchanged, claims are cleared, and replay returns the same payment without another gateway call.
+
+Worker waits and database lock/statement timeouts are bounded. Workers and fixtures are cleaned up on failure. Stripe is replaced with a local fake gateway; these are real PostgreSQL integration checks, not live Stripe API checks.
