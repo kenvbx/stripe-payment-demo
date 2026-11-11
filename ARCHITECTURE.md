@@ -32,4 +32,6 @@ Personal portfolio demo, low traffic, one region, low data volume, seconds-level
 
 ## Security decisions
 
+Administrative payment reads, event logs, refunds, and manual retries require Sanctum bearer authentication, the persisted `admin` user role, and an `admin` token ability. Tokens expire after one hour, are stored as hashes in the database, and are revoked on logout. The browser keeps the token in memory and discards private data on logout or a 401 response; late requests from an ended session cannot restore private records. Login is rate limited by email/IP and by IP. Administrators are provisioned through a private CLI prompt or optional server-only first-deployment bootstrap; there is no public registration endpoint. Product lookup, customer checkout, and session results are public, while incoming webhooks require Stripe's signature.
+
 Use test keys only, validate all input, verify webhook signatures, never log secrets or full card data, and keep Stripe secret keys out of the browser. Production deployment would require HTTPS, rate limiting, secret management, and backups.

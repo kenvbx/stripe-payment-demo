@@ -18,7 +18,7 @@ The detail view shows payment identifiers, customer and product information, web
 
 ## Reviewer walkthrough
 
-1. Start the Laravel API and Vite frontend using the commands in the root README.
+1. Start the Laravel API and Vite frontend using the commands in the root README. Create an administrator privately with `php artisan admin:create EMAIL` and choose **Admin sign in** to inspect protected payment records.
 2. Open **Overview** and choose **Create checkout**.
 3. Select a demo product. With test credentials configured, the browser redirects to Stripe-hosted Checkout.
 4. Use Stripe test card `4242 4242 4242 4242`, any future expiry and any CVC.
@@ -31,6 +31,8 @@ The detail view shows payment identifiers, customer and product information, web
 | Area | Evidence in repository |
 | --- | --- |
 | Payment detail endpoint | `GET /api/payments/{id}` returns the transaction record for the detail page. |
+| Protected administration | Sanctum bearer authentication with a one-hour expiry, admin role/ability checks, rate limited sign in, and token revocation; `backend/tests/Feature/AdminAuthTest.php`. |
+| Administrator UI | In-memory token, sign in/out, expired-session cleanup, and late-response protection covered by `e2e/admin-auth.spec.js` using mocked API responses. |
 | Payment detail interface | `src/main.jsx` and `src/styles.css` |
 | Checkout result page | React handles Stripe success/cancel redirects and checks session status via `GET /api/checkout/sessions/{sessionId}`. |
 | Test-mode refunds | `backend/app/Services/StripeRefundService.php` and `POST /api/payments/{payment}/refund`; live keys are rejected. |

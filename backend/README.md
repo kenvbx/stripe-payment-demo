@@ -17,11 +17,15 @@ Set `STRIPE_SECRET` and `STRIPE_WEBHOOK_SECRET` only when connecting Stripe test
 
 ## Endpoints
 
-- `GET /api/products` (active database catalog)
+Public: `GET /api/products`, `POST /api/payments/checkout`, and `GET /api/checkout/sessions/{sessionId}`. Stripe authenticates `POST /api/webhooks/stripe` with its signature.
+
+`POST /api/admin/login` accepts email/password and returns a one-hour Sanctum token. Use `Authorization: Bearer <token>` for the protected routes below. `GET /api/admin/me` checks the current administrator; `POST /api/admin/logout` revokes the current token. Every protected route requires both `role=admin` and the `admin` token ability. No account is created unless explicitly provisioned with `php artisan admin:create EMAIL` or the optional private bootstrap environment variables.
+
 - `GET /api/payments`
-- `POST /api/payments/checkout` (`product_id`, customer details, and idempotency key; amount/name/currency are resolved server-side)
+- `GET /api/payments/{payment}`
+- `GET /api/webhook-events`
 - `POST /api/payments/{payment}/retry-webhook`
-- `POST /api/webhooks/stripe`
+- `POST /api/payments/{payment}/refund`
 
 The webhook endpoint verifies `Stripe-Signature`, locks the payment row, ignores duplicate event IDs, and applies payment intent state transitions inside a transaction.
 

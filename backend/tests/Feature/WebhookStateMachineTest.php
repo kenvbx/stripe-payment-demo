@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Payment;
+use App\Models\User;
+use Laravel\Sanctum\Sanctum;
 use App\Models\WebhookEvent;
 use App\Services\StripeWebhookProcessor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,6 +17,7 @@ class WebhookStateMachineTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Sanctum::actingAs(User::forceCreate(['name' => 'Admin', 'email' => 'admin@example.com', 'password' => 'test-password-long', 'role' => 'admin']), ['admin']);
         config(['services.stripe.secret' => null, 'services.stripe.webhook_secret' => 'whsec_state_machine']);
     }
 

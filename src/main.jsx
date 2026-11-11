@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, ArrowDownLeft, ArrowUpRight, Check, ChevronRight, CircleHelp, Clock3, Code2, Copy, CreditCard, ExternalLink, FileText, LayoutDashboard, Menu, MoreHorizontal, Package, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Webhook, X, Zap } from 'lucide-react';
 import './styles.css';
+import AdminLoginModal from './AdminLoginModal';
 
 const initialPayments = [
   { id: 'pi_3Qx9k7J2', customer: 'Maya Chen', email: 'maya@northstar.studio', product: 'Pro workspace', amount: 8900, status: 'succeeded', method: 'Visa •••• 4242', created: 'Today, 10:42', webhook: 'processed' },
@@ -57,15 +58,52 @@ function normalizeWebhookEvent(event) {
     product: event.payment?.product_name || '—',
   };
 }
+let adminAccessToken = null;
 async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {}) } });
+  const requestToken = path === '/admin/login' ? null : adminAccessToken;
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(requestToken ? { Authorization: `Bearer ${requestToken}` } : {}), ...(options.headers || {}) } });
+  if ([401, 403].includes(response.status) && requestToken && requestToken === adminAccessToken) {
+    adminAccessToken = null;
+    window.dispatchEvent(new Event('admin-session-expired'));
+  }
   const data = await response.json().catch(() => ({}));
+  if (requestToken && requestToken !== adminAccessToken) throw new Error('Admin session ended. Please sign in again.');
   if (!response.ok) throw new Error(data.message || `API request failed (${response.status})`);
   return data;
 }
 
 function App() {
-  const [tab, setTab] = useState('Overview'); const [payments, setPayments] = useState(initialPayments); const [products, setProducts] = useState(demoProducts); const [filter, setFilter] = useState('all'); const [query, setQuery] = useState(''); const [modal, setModal] = useState(null); const [toast, setToast] = useState(''); const [apiConnected, setApiConnected] = useState(false); const [selectedPayment, setSelectedPayment] = useState(null); const [webhookEvents, setWebhookEvents] = useState([]); const [checkoutResult, setCheckoutResult] = useState(null);
+  const [adminSession, setAdminSession] = useState(null);
+  const [signingOut, setSigningOut] = useState(false);
+  function clearAdminSession() {
+    adminAccessToken = null; setAdminSession(null);
+    setPayments(API_ENABLED ? [] : initialPayments); setWebhookEvents([]); setSelectedPayment(null); setTab('Overview');
+  }
+  useEffect(() => {
+    const expire = () => { clearAdminSession(); setToast('Admin session expired. Please sign in again.'); };
+    window.addEventListener('admin-session-expired', expire);
+    return () => window.removeEventListener('admin-session-expired', expire);
+  }, []);
+  useEffect(() => {
+    if (!adminSession) return;
+    const timeout = window.setTimeout(() => window.dispatchEvent(new Event('admin-session-expired')), Math.max(0, new Date(adminSession.expiresAt).getTime() - Date.now()));
+    return () => window.clearTimeout(timeout);
+  }, [adminSession]);
+  async function loginAdmin(email, password) {
+    const response = await apiRequest('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    adminAccessToken = response.token;
+    setAdminSession({ user: response.user, expiresAt: response.expires_at });
+    setModal(null); notify('Signed in as administrator');
+  }
+  async function logoutAdmin() {
+    setSigningOut(true);
+    try {
+      await apiRequest('/admin/logout', { method: 'POST' });
+      clearAdminSession(); notify('Signed out');
+    } catch (error) { notify(error.message || 'Sign out failed. Please try again.'); }
+    finally { setSigningOut(false); }
+  }
+  const [tab, setTab] = useState('Overview'); const [payments, setPayments] = useState(API_ENABLED ? [] : initialPayments); const [products, setProducts] = useState(demoProducts); const [filter, setFilter] = useState('all'); const [query, setQuery] = useState(''); const [modal, setModal] = useState(null); const [toast, setToast] = useState(''); const [apiConnected, setApiConnected] = useState(false); const [selectedPayment, setSelectedPayment] = useState(null); const [webhookEvents, setWebhookEvents] = useState([]); const [checkoutResult, setCheckoutResult] = useState(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const outcome = params.get('checkout');
@@ -82,14 +120,19 @@ function App() {
   }, []);
   useEffect(() => {
     if (!API_ENABLED) return;
-    apiRequest('/payments?per_page=100').then(response => {
-      const records = Array.isArray(response.data) ? response.data : [];
-      setPayments(records.map(normalizePayment));
-      apiRequest('/webhook-events?per_page=100').then(eventResponse => setWebhookEvents((eventResponse.data || []).map(normalizeWebhookEvent))).catch(() => {});
-      apiRequest('/products').then(productResponse => setProducts((productResponse.data || []).map(normalizeProduct))).catch(() => {});
-      setApiConnected(true);
-    }).catch(() => setApiConnected(false));
+    apiRequest('/products').then(response => { setProducts((response.data || []).map(normalizeProduct)); setApiConnected(true); }).catch(() => setApiConnected(false));
   }, []);
+  useEffect(() => {
+    if (!API_ENABLED || !adminSession) return;
+    let active = true;
+    apiRequest('/payments?per_page=100').then(response => {
+      if (active) { setPayments((response.data || []).map(normalizePayment)); setApiConnected(true); }
+    }).catch(() => { if (active) setApiConnected(false); });
+    apiRequest('/webhook-events?per_page=100').then(response => {
+      if (active) setWebhookEvents((response.data || []).map(normalizeWebhookEvent));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [adminSession]);
   const visible = useMemo(() => payments.filter(p => (filter === 'all' || p.status === filter) && `${p.customer} ${p.email} ${p.id}`.toLowerCase().includes(query.toLowerCase())), [payments, filter, query]);
   const succeeded = payments.filter(p => p.status === 'succeeded'); const volume = succeeded.reduce((sum, p) => sum + p.amount, 0);
   function notify(message) { setToast(message); window.setTimeout(() => setToast(''), 2600); }
@@ -162,7 +205,7 @@ function App() {
       notify(error.message || 'Webhook retry failed');
     }
   }
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><Zap size={15}/></span><span>payflow</span><small>DEMO</small></div><div className="mode-pill"><span className="pulse"/> Stripe test mode · {apiConnected ? 'Laravel API' : 'Local fallback'}</div><nav><p>Workspace</p><NavItem icon={<LayoutDashboard size={17}/>} label="Overview" active={tab === 'Overview'} onClick={() => setTab('Overview')}/><NavItem icon={<CreditCard size={17}/>} label="Payments" count={payments.length} active={tab === 'Payments'} onClick={() => setTab('Payments')}/><NavItem icon={<Package size={17}/>} label="Products" active={tab === 'Products'} onClick={() => setTab('Products')}/><NavItem icon={<Webhook size={17}/>} label="Webhooks" active={tab === 'Webhooks'} onClick={() => setTab('Webhooks')}/><p>Build</p><NavItem icon={<Code2 size={17}/>} label="API explorer" active={tab === 'API explorer'} onClick={() => setTab('API explorer')}/><NavItem icon={<Settings2 size={17}/>} label="Settings" active={tab === 'Settings'} onClick={() => setTab('Settings')}/></nav><div className="sidebar-bottom"><div className="help-card"><CircleHelp size={17}/><div><strong>Payment docs</strong><span>Learn the flow</span></div><ChevronRight size={15}/></div><div className="profile"><div className="avatar">TP</div><div><strong>Tuyen Pham</strong><span>Developer</span></div><MoreHorizontal size={17}/></div></div></aside><main className="main"><header className="topbar"><button className="mobile-menu"><Menu size={20}/></button><div className="crumb"><span>Payment operations</span><ChevronRight size={14}/><strong>{tab}</strong></div><div className="top-actions"><button className="icon-btn" aria-label="Search"><Search size={18}/></button><div className="avatar small">TP</div></div></header><div className="content">{checkoutResult ? <CheckoutResultPage result={checkoutResult} onRefresh={refreshCheckoutResult} onReturn={closeCheckoutResult} onTryAgain={() => { closeCheckoutResult(); setModal('checkout'); }}/>: <>{tab === 'Overview' && <Overview payments={payments} volume={volume} onCheckout={() => setModal('checkout')} onRetry={retryWebhook} onViewPayments={() => setTab('Payments')} onSelectPayment={openPayment}/>} {tab === 'Payments' && <Payments payments={visible} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} onRetry={retryWebhook} onSelectPayment={openPayment}/>} {tab === 'Payment detail' && selectedPayment && <PaymentDetail payment={selectedPayment} onBack={() => setTab('Payments')} onRetry={retryWebhook} onRefund={refundPayment}/>} {tab === 'Products' && <Products products={products} onCheckout={simulateCheckout}/>} {tab === 'Webhooks' && <Webhooks payments={payments} webhookEvents={webhookEvents} apiConnected={apiConnected} onRetry={retryWebhook}/>} {tab === 'API explorer' && <ApiExplorer onCopy={() => notify('Request copied to clipboard')}/>} {tab === 'Settings' && <Settings/>}</>}</div></main>{modal === 'checkout' && <CheckoutModal products={products} onClose={() => setModal(null)} onCreate={simulateCheckout}/>} {toast && <div className="toast"><Check size={16}/>{toast}</div>}</div>;
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark"><Zap size={15}/></span><span>payflow</span><small>DEMO</small></div><div className="mode-pill"><span className="pulse"/> Stripe test mode · {apiConnected ? 'Laravel API' : 'Local fallback'}</div><nav><p>Workspace</p><NavItem icon={<LayoutDashboard size={17}/>} label="Overview" active={tab === 'Overview'} onClick={() => setTab('Overview')}/><NavItem icon={<CreditCard size={17}/>} label="Payments" count={payments.length} active={tab === 'Payments'} onClick={() => setTab('Payments')}/><NavItem icon={<Package size={17}/>} label="Products" active={tab === 'Products'} onClick={() => setTab('Products')}/><NavItem icon={<Webhook size={17}/>} label="Webhooks" active={tab === 'Webhooks'} onClick={() => setTab('Webhooks')}/><p>Build</p><NavItem icon={<Code2 size={17}/>} label="API explorer" active={tab === 'API explorer'} onClick={() => setTab('API explorer')}/><NavItem icon={<Settings2 size={17}/>} label="Settings" active={tab === 'Settings'} onClick={() => setTab('Settings')}/></nav><div className="sidebar-bottom"><div className="help-card"><CircleHelp size={17}/><div><strong>Payment docs</strong><span>Learn the flow</span></div><ChevronRight size={15}/></div><div className="profile"><div className="avatar">TP</div><div><strong>Tuyen Pham</strong><span>Developer</span></div><MoreHorizontal size={17}/></div></div></aside><main className="main"><header className="topbar"><button className="mobile-menu"><Menu size={20}/></button><div className="crumb"><span>Payment operations</span><ChevronRight size={14}/><strong>{tab}</strong></div><div className="top-actions">{API_ENABLED && (adminSession ? <button className="outline" onClick={logoutAdmin} disabled={signingOut}>{signingOut ? 'Signing out…' : 'Sign out'}</button> : <button className="outline" onClick={() => setModal('admin-login')}>Admin sign in</button>)}<button className="icon-btn" aria-label="Search"><Search size={18}/></button><div className="avatar small">TP</div></div></header><div className="content">{API_ENABLED && !adminSession && <div className="admin-notice"><ShieldCheck size={16}/><span>Admin sign in is required to view payment records and manage refunds or webhook retries.</span></div>}{checkoutResult ? <CheckoutResultPage result={checkoutResult} onRefresh={refreshCheckoutResult} onReturn={closeCheckoutResult} onTryAgain={() => { closeCheckoutResult(); setModal('checkout'); }}/>: <>{tab === 'Overview' && <Overview payments={payments} volume={volume} onCheckout={() => setModal('checkout')} onRetry={retryWebhook} onViewPayments={() => setTab('Payments')} onSelectPayment={openPayment}/>} {tab === 'Payments' && <Payments payments={visible} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} onRetry={retryWebhook} onSelectPayment={openPayment}/>} {tab === 'Payment detail' && selectedPayment && <PaymentDetail payment={selectedPayment} onBack={() => setTab('Payments')} onRetry={retryWebhook} onRefund={refundPayment}/>} {tab === 'Products' && <Products products={products} onCheckout={simulateCheckout}/>} {tab === 'Webhooks' && <Webhooks payments={payments} webhookEvents={webhookEvents} apiConnected={apiConnected} onRetry={retryWebhook}/>} {tab === 'API explorer' && <ApiExplorer onCopy={() => notify('Request copied to clipboard')}/>} {tab === 'Settings' && <Settings/>}</>}</div></main>{modal === 'admin-login' && <AdminLoginModal onLogin={loginAdmin} onClose={() => setModal(null)}/>} {modal === 'checkout' && <CheckoutModal products={products} onClose={() => setModal(null)} onCreate={simulateCheckout}/>} {toast && <div className="toast"><Check size={16}/>{toast}</div>}</div>;
 }
 function CheckoutResultPage({ result, onRefresh, onReturn, onTryAgain }) {
   const cancelled = result.kind === 'cancelled';
